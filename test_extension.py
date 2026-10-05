@@ -269,23 +269,26 @@ class ExtensionTests(unittest.TestCase):
         for file in (manifest['background']['service_worker'],manifest['action']['default_popup'], 'content.js', 'popup.js', 'popup.css'):
             self.assertTrue((EXT/file).is_file(), file)
 
-    def test_popup_uses_existing_community_tab(self):
+    def test_popup_only_sets_interval_and_enables_schedule(self):
         self.page.set_content((EXT/'popup.html').read_text(encoding='utf-8'))
         self.page.add_style_tag(path=str(EXT/'popup.css'))
-        self.page.evaluate('''() => {
+        self.page.evaluate("""() => {
           window.calls=[];
-          chrome.tabs={query:async()=>[{id:7,url:'https://vk.ru/tri_sloga_band',active:true}],
-            update:async(id,opts)=>{calls.push(['update',id]);return {id,url:location.href}},
-            create:async()=>{throw Error('Must not create another tab')},
-            get:async()=>({status:'complete'}),
-            sendMessage:async(id,msg)=>{calls.push(['start',id,msg.automatic]);return {ok:true}}};
-          chrome.scripting={executeScript:async()=>{}};
-        }''')
+          chrome.storage.onChanged={addListener:()=>{}};
+          chrome.runtime.sendMessage=async msg=>{
+            calls.push(msg);
+            return {ok:true,schedule:{enabled:msg.type==='scheduleSet',intervalHours:msg.intervalHours||6,nextRunAt:Date.now()+3600000}};
+          };
+        }""")
         self.page.add_script_tag(path=str(EXT/'popup.js'))
-        self.page.get_by_role('button', name='Создать пост', exact=True).click()
-        self.page.wait_for_function('document.getElementById("status").textContent.includes("Ход работы")')
-        self.assertEqual(self.page.evaluate('calls'), [['update',7],['start',7,True]])
-        self.page.screenshot(path=str(ROOT/'extension-preview.png'))
+        self.page.locator('#interval').fill('3.5')
+        self.page.locator('#enable').click()
+        self.page.wait_for_function("document.getElementById('status').textContent.includes('Следующая попытка')")
+        calls=self.page.evaluate('calls')
+        self.assertEqual(calls[-1], {'type':'scheduleSet','intervalHours':3.5})
+        self.assertEqual(self.page.locator('input').count(),1)
+        self.page.locator('#disable').click()
+        self.page.wait_for_function("calls.some(c=>c.type==='scheduleStop')")
 
     def test_live_album_layout_with_overlay_link_uses_parent_image(self):
         self.page.set_content('''<div class="photos_row" data-id="-220995299_457239019"
@@ -336,17 +339,43 @@ class ExtensionTests(unittest.TestCase):
           </div>
           <article id="post" data-testid="post"></article>
         ''')
-        self.page.evaluate('''() => {chrome.runtime.sendMessage=async msg=>{
+        self.page.evaluate('''() => {window.sentMessages=[];chrome.runtime.sendMessage=async msg=>{
+          sentMessages.push(msg);
           if(msg.type==='claim') return {ok:true,jobId:'fixture'};
           if(msg.type==='image') return {ok:true,base64:btoa('fake fixture bytes'),mime:'image/jpeg'};
           return {ok:true};
         }}''')
-        self.page.evaluate('''async()=>{await TriSloga.run({automatic:true,quote:'Любовь наполняет нашу жизнь светом.'})}''')
+        self.page.evaluate('''async()=>{await TriSloga.run({automatic:true,quote:'Любовь наполняет нашу жизнь светом.',scheduleRunId:'scheduled-fixture'})}''')
         self.assertEqual(self.page.evaluate('window.publishCount'),1)
         self.assertEqual(self.page.evaluate('window.nextCount'),1)
         self.assertEqual(self.page.get_by_role('textbox',name='Написать комментарий').inner_text(),'untouched comment')
         logs=self.page.evaluate('TriSloga.state.logs')
         self.assertIn('Пост опубликован',logs[-1])
+        self.assertEqual(self.page.evaluate('sentMessages.find(m=>m.type==="scheduleResult")'),
+                         {'type':'scheduleResult','runId':'scheduled-fixture','success':True})
+
+    def test_scheduled_failure_reports_result_and_releases_job(self):
+        self.content('<div>VK login required</div>')
+        self.page.evaluate('''()=>{
+          window.sentMessages=[];
+          chrome.runtime.sendMessage=async msg=>{sentMessages.push(msg);return {ok:true,jobId:'fixture'}};
+        }''')
+        self.page.evaluate('TriSloga.run({automatic:true,scheduleRunId:"failed-fixture"})')
+        result=self.page.evaluate('sentMessages.find(m=>m.type==="scheduleResult")')
+        self.assertFalse(result['success'])
+        self.assertIn('Войдите в VK', result['error'])
+        self.assertTrue(self.page.evaluate('sentMessages.some(m=>m.type==="release")'))
+
+    def test_stale_stop_message_does_not_cancel_new_scheduled_run(self):
+        self.content('<div></div>')
+        result = self.page.evaluate('''()=>{
+          TriSloga.state.scheduleRunId='current'; TriSloga.state.stopped=false;
+          testListeners[0]({type:'stop',scheduleRunId:'old'}, {id:chrome.runtime.id}, ()=>{});
+          const staleStopped=TriSloga.state.stopped;
+          testListeners[0]({type:'stop',scheduleRunId:'current'}, {id:chrome.runtime.id}, ()=>{});
+          return {staleStopped,currentStopped:TriSloga.state.stopped};
+        }''')
+        self.assertEqual(result, {'staleStopped':False,'currentStopped':True})
 
 
 if __name__=='__main__':

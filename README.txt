@@ -7,6 +7,9 @@ Open "Install Chrome Extension.cmd" to open Chrome's extension manager and
 the source folder, then enable Developer mode and use Load unpacked.
 The extension uses your normal Chrome VK login. It replaces the Windows
 prototype below; do not run both publishers at the same time.
+Version 0.2.0: choose an interval in hours and click Enable for an immediate
+first post and recurring automatic attempts. See README.md and
+extension\INSTALL.txt for scheduling and notification details.
 
 STATUS: The VK publishing workflow has NOT been validated against the target
 community. VK selectors in app.py may need adjustment. Do not treat this build

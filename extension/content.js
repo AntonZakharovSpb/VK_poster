@@ -72,7 +72,10 @@
       const root = host.attachShadow({mode: 'open'});
       root.innerHTML = `<style>:host{font:13px "Segoe UI",sans-serif;color:#17212d}section{width:330px;background:white;border:1px solid #d4dfec;box-shadow:0 8px 32px #17212d25;border-radius:16px;padding:16px}header{display:flex;justify-content:space-between;align-items:center;font-size:16px;font-weight:600}pre{white-space:pre-wrap;overflow:auto;max-height:220px;font:12px/1.6 "Segoe UI",sans-serif;color:#4c5e73}button{border:0;border-radius:8px;padding:8px 10px;background:#e9f1fc;color:#006edd;cursor:pointer;font:12px "Segoe UI"}.actions{display:flex;gap:8px;flex-wrap:wrap}.reset{margin-top:8px}small{color:#657688;font-size:11px}</style><section><header>Три Слога <button id="hide">Скрыть</button></header><pre></pre><div class="actions"><button id="stop">Остановить</button><button id="copy">Копировать журнал</button></div><button class="reset" id="reset">Я проверил стену: разрешить новую попытку</button><p><small>Фото + песня + цитата. Окно VK останется открытым.</small></p></section>`;
       root.getElementById('hide').onclick = () => { host.style.display = 'none'; };
-      root.getElementById('stop').onclick = () => { state.stopped = true; log('Останавливаю действия…'); };
+      root.getElementById('stop').onclick = () => {
+        state.stopped = true; log('Останавливаю действия и расписание…');
+        message({type: 'scheduleStop'}).catch(() => {});
+      };
       root.getElementById('copy').onclick = async () => {
         try { await navigator.clipboard.writeText(state.logs.join('\n')); log('Журнал скопирован.'); }
         catch { log('Не удалось скопировать. Журнал можно выделить вручную.'); }
@@ -171,7 +174,7 @@
     }
     return result;
   }
-  async function openComposer() {
+  async function openComposer({unattended = false} = {}) {
     if (composerCandidates().length) throw new Error('Уже открыт редактор с черновиком. Завершите или закройте его перед запуском.');
     const create = await until(() => all(document, '[data-testid="group_publish_create_button"]').find(visible), 'кнопка «Создать»');
     state.communityContext = !!create.closest('[data-testid="group_publish_block"]') &&
@@ -187,6 +190,7 @@
     try { opened = await until(detect, 'меню создания поста или редактор', 5000); }
     catch (error) {
       if (state.stopped) throw error;
+      if (unattended) throw new Error('VK не открыл меню создания поста автоматически. Скачайте диагностику: требуется настройка интерфейса.');
       log('VK не открыл меню автоматически. Нажмите «Создать» на странице VK; я продолжу после открытия меню.');
       opened = await until(detect, 'меню после нажатия «Создать»', 120000);
     }
@@ -418,7 +422,7 @@
   }
   function diagnostics(error = '') {
     const scope = currentComposerRoot() || document;
-    return {version: '0.1.3', time: new Date().toISOString(), stage: state.stage, error,
+    return {version: '0.2.0', time: new Date().toISOString(), stage: state.stage, error,
       page: location.origin + location.pathname + location.hash,
       photo: state.photo?.id, audio: state.audio?.id,
       communityContext: state.communityContext, photoAttached: state.photoAttached, audioSelectionVerified: state.audioSelectionVerified,
@@ -439,9 +443,10 @@
     if (location.pathname !== PATH || !['vk.ru','vk.com'].includes(location.hostname)) throw new Error('Откройте сообщество Три Слога.');
     if (state.running) throw new Error('Публикация уже выполняется.');
     state.running = true; state.stopped = false; state.logs = []; state.composer = null; state.photoPreview = null;
+    state.scheduleRunId = options.scheduleRunId || null;
     state.photoAttached = false; state.audioSelectionVerified = null; state.communityContext = false;
     panel();
-    let jobId;
+    let jobId, outcome = {success: false, error: 'Публикация не завершена.'};
     try {
       const claim = await message({type: 'claim'}); jobId = claim.jobId;
       log('Запуск в вашей текущей вкладке VK.');
@@ -454,7 +459,7 @@
       log('Цитата получена.');
       await collectMedia();
       state.stage = 'open composer';
-      const composer = await openComposer(); setText(composer.editor, text);
+      const composer = await openComposer({unattended: !!options.scheduleRunId}); setText(composer.editor, text);
       await attachPhoto(); await advanceComposer(); await attachAudio();
       state.stage = 'verify';
       const root = currentComposerRoot();
@@ -463,6 +468,7 @@
       if (!authorVerified(root)) throw new Error('Не удалось подтвердить автора «Три Слога». Пост оставлен в редакторе. Проверьте автора; отправьте диагностику для настройки.');
       if (state.stopped) throw new Error('Остановлено пользователем.');
       await message({type: 'beginPublish', jobId, photo: state.photo.id, audio: state.audio.id});
+      if (state.stopped) throw new Error('Остановлено пользователем. Проверьте стену перед новой попыткой.');
       state.stage = 'publish';
       await click(one(control(root, /^Опубликовать$/u), 'кнопка публикации'));
       log('Публикация отправлена один раз. Проверяю результат…');
@@ -474,18 +480,27 @@
       }
       await message({type: 'completePublish', jobId});
       log('Пост опубликован на стене сообщества.');
-    } catch (error) { log('Остановлено: ' + error.message); }
+      outcome = {success: true};
+    } catch (error) { outcome = {success: false, error: error.message}; log('Остановлено: ' + error.message); }
     finally {
       try { await message({type: 'diagnostic', data: diagnostics(state.logs.at(-1))}); } catch { /* Log remains visible. */ }
       if (jobId) { try { await message({type: 'release', jobId}); } catch { /* Lease expires. */ } }
       state.running = false;
+      if (options.scheduleRunId) {
+        try { await message({type: 'scheduleResult', runId: options.scheduleRunId, ...outcome}); } catch { /* Watchdog reports an interrupted job. */ }
+      }
     }
   }
 
   globalThis.TriSloga = {run, photoCandidates, audioCandidates, composerCandidates, parseQuotes, state, openComposer,
     creationMenuItems, musicPicker, matchesAudio, attachAudio, audioAttachments, photoAttachments, authorVerified};
   chrome.runtime.onMessage.addListener((options, sender, reply) => {
-    if (sender.id !== chrome.runtime.id || options.type !== 'start') return;
+    if (sender.id !== chrome.runtime.id) return;
+    if (options.type === 'stop') {
+      if (!options.scheduleRunId || options.scheduleRunId === state.scheduleRunId) state.stopped = true;
+      reply({ok: true}); return;
+    }
+    if (options.type !== 'start') return;
     if (state.running) { reply({ok: false, error: 'Публикация уже выполняется.'}); return; }
     reply({ok: true});
     run(options).catch(error => { panel(); log('Остановлено: ' + error.message); });

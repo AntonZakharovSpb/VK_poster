@@ -1,5 +1,6 @@
 const COMMUNITY_PATH = '/tri_sloga_band';
 const QUOTE_SOURCE = 'https://ru.wikiquote.org/wiki/Любовь';
+if (typeof importScripts === 'function') importScripts('scheduler.js');
 let jobQueue = Promise.resolve();
 
 async function collectAlbum(raw, windowId) {
@@ -103,6 +104,11 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
   const fromVK = sender.tab && /^https:\/\/(vk\.ru|vk\.com)\//.test(sender.url || sender.tab.url || '');
   if (!fromExtension) return;
   const task = async () => {
+    if (['scheduleSet', 'scheduleStop', 'scheduleStatus', 'scheduleResult'].includes(message.type)) {
+      if (message.type === 'scheduleResult' && !fromVK) throw new Error('Результат должен поступить из VK.');
+      if (['scheduleSet', 'scheduleStatus'].includes(message.type) && sender.tab) throw new Error('Используйте настройки расширения.');
+      return scheduleCommand(message, sender);
+    }
     if (['claim', 'release', 'beginPublish', 'completePublish'].includes(message.type)) {
       if (!fromVK) throw new Error('Публикация доступна только из VK.');
       return jobCommand(message, sender);
