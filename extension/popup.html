@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><title>Три Слога</title><link rel="stylesheet" href="popup.css"></head>
+<body>
+  <header><span class="mark">ТС</span><div><h1>Три Слога</h1><p>Одна публикация — три составляющих</p></div></header>
+  <div class="community">Фото сообщества · песня · цитата</div>
+  <label for="quote">Текст</label><textarea id="quote" rows="4" placeholder="Оставьте пустым для случайной цитаты о любви"></textarea>
+  <label class="check"><input id="automatic" type="checkbox" checked> Сразу публиковать после проверки вложений</label>
+  <p class="hint">Снимите галочку, чтобы оставить подготовленный пост в редакторе. Если VK попросит вход — войдите в этой же вкладке.</p>
+  <button id="run" class="primary">Создать пост</button>
+  <div class="links"><button id="photos">Фото сообщества</button><button id="diagnostics">Диагностика</button></div>
+  <p id="status" role="status">Работает в вашей обычной вкладке VK.</p>
+  <script src="popup.js"></script>
+</body></html>

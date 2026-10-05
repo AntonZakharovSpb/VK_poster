@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "Три Слога — публикации VK",
+  "version": "0.1.3",
+  "description": "Фото сообщества, песня и русская цитата — в вашей обычной вкладке VK.",
+  "permissions": ["storage", "scripting", "activeTab"],
+  "host_permissions": [
+    "https://vk.ru/*", "https://vk.com/*",
+    "https://ru.wikiquote.org/*",
+    "https://*.vkuserphoto.ru/*", "https://*.vkuserphoto.com/*",
+    "https://*.userapi.com/*", "https://*.vk.com/*", "https://*.vk.ru/*"
+  ],
+  "background": {"service_worker": "background.js"},
+  "action": {"default_popup": "popup.html", "default_title": "Три Слога"}
+}

@@ -1,0 +1,17 @@
+build/
+dist/
+__pycache__/
+*.py[cod]
+.venv/
+*.zip
+*.spec
+extension-preview.png
+inspect_*.py
+live-inspection.txt
+*diagnostic*.json
+last-error.*
+*-inspect.html
+chrome-profile/
+settings.json
+.env
+.env.*

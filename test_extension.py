@@ -1,0 +1,353 @@
+"""Browser regression tests; no network and no real VK publishing."""
+import json
+import os
+import unittest
+from pathlib import Path
+from playwright.sync_api import sync_playwright
+
+ROOT = Path(__file__).parent
+EXT = ROOT / 'extension'
+
+
+class ExtensionTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.pw = sync_playwright().start()
+        cls.browser = cls.pw.chromium.launch(channel='chrome', headless=True)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.browser.close()
+        cls.pw.stop()
+
+    def setUp(self):
+        self.page = self.browser.new_page()
+        self.page.route('**/*', lambda route: route.fulfill(body='<html><body></body></html>', content_type='text/html'))
+        self.page.goto('https://vk.ru/tri_sloga_band')
+        self.page.evaluate('''() => {
+          window.testStorage = {};
+          window.testListeners = [];
+          window.chrome = {runtime: {id:'test-extension', onMessage:{addListener(fn){testListeners.push(fn)}},
+            sendMessage:async()=>({ok:true})}, storage:{local:{
+              async get(keys){if(typeof keys==='string') return {[keys]:testStorage[keys]};
+                if(!Array.isArray(keys)) return {...keys,...testStorage};
+                return Object.fromEntries(keys.map(k=>[k,testStorage[k]]));},
+              async set(data){Object.assign(testStorage,data)},
+              async remove(keys){for(const k of Array.isArray(keys)?keys:[keys]) delete testStorage[k]}
+            }}};
+        }''')
+
+    def tearDown(self):
+        self.page.close()
+
+    def content(self, html):
+        self.page.set_content(html)
+        self.page.add_script_tag(path=str(EXT/'content.js'))
+
+    def test_only_community_photo_tab_media_is_selected(self):
+        self.content('''
+          <a href="/photo-220995299_123"><img width="50" height="50" src="https://sun1.vkuserphoto.ru/community.jpg"></a>
+          <a href="/photo99_124"><img width="50" height="50" src="https://sun1.vkuserphoto.ru/personal.jpg"></a>
+          <div data-testid="post"><a href="/photo-220995299_125"><img width="50" height="50" src="https://sun1.vkuserphoto.ru/wall.jpg"></a></div>
+        ''')
+        result = self.page.evaluate('TriSloga.photoCandidates()')
+        self.assertEqual([p['id'] for p in result], ['-220995299_123'])
+
+    def test_quote_filter_checks_whole_words_and_deduplicates(self):
+        self.content('<div></div>')
+        html = '''<div class="mw-parser-output"><ul>
+          <li>Любовь наполняет нашу жизнь теплом и светом каждый день.</li>
+          <li>Любовь наполняет нашу жизнь теплом и светом каждый день.</li>
+          <li>Много счастья и радости приносит нам прекрасная весна.</li>
+          <li>Счастье приходит, когда мы учимся любить и беречь друг друга.</li>
+        </ul></div>'''
+        result = self.page.evaluate('(html)=>TriSloga.parseQuotes(html)', html)
+        self.assertEqual(len(result), 2)
+        self.assertFalse(any('счастья' in text for text in result))
+
+    def test_comment_box_is_not_a_post_editor(self):
+        self.content('''
+          <div data-testid="wall_comments_layout_root">
+            <div role="textbox" contenteditable="true" aria-label="Написать комментарий">Existing comment</div>
+            <button><span style="position:absolute;left:-10000px">Фотография</span></button>
+            <button>Опубликовать</button>
+          </div>''')
+        self.assertEqual(self.page.evaluate('TriSloga.composerCandidates().length'), 0)
+
+    def test_post_editor_is_scoped_to_publish_container(self):
+        self.content('''
+          <div contenteditable="true" aria-label="Написать комментарий">existing comment</div>
+          <div role="dialog"><div role="textbox" contenteditable="true" aria-label="Текст публикации"></div><button>Опубликовать</button></div>
+        ''')
+        self.assertEqual(self.page.evaluate('TriSloga.composerCandidates().length'), 1)
+        self.assertEqual(self.page.evaluate('TriSloga.composerCandidates()[0].editor.getAttribute("aria-label")'), 'Текст публикации')
+
+    def test_creation_menu_opens_on_mouse_press_and_accepts_plain_span(self):
+        self.content('''
+          <button data-testid="group_publish_create_button" onmousedown="document.getElementById('menu').hidden=false">Создать</button>
+          <div id="menu" role="dialog" data-testid="dropdownactionsheet" hidden>
+            <div onclick="document.getElementById('menu').hidden=true;document.getElementById('editor').hidden=false"><span><span>Пост</span></span></div>
+            <div><span>Пост в канал</span></div>
+          </div>
+          <div id="editor" role="dialog" data-testid="posting_modal_box" hidden>
+            <div contenteditable="true" role="textbox" aria-label="Напишите что-нибудь..."></div><button>Далее</button>
+          </div>''')
+        self.assertTrue(self.page.evaluate('async()=>{const composer=await TriSloga.openComposer(); return composer.modern}'))
+        self.assertTrue(self.page.locator('#editor').is_visible())
+
+    def test_create_button_replaced_after_scroll_is_reacquired(self):
+        self.content('''
+          <button data-testid="group_publish_create_button" onclick="document.getElementById('editor').hidden=false">Создать</button>
+          <div id="editor" role="dialog" data-testid="posting_modal_box" hidden>
+            <div contenteditable="true" role="textbox"></div><button>Далее</button>
+          </div>''')
+        self.page.evaluate('''()=>{
+          const create=document.querySelector('[data-testid="group_publish_create_button"]');
+          create.scrollIntoView=function(){window.replaced=true;this.replaceWith(this.cloneNode(true))};
+        }''')
+        self.assertTrue(self.page.evaluate('async()=>{await TriSloga.openComposer();return window.replaced}'))
+
+    def test_create_menu_can_depend_on_hover_before_click(self):
+        self.content('''
+          <button data-testid="group_publish_create_button" onmouseenter="window.hovered=true"
+            onclick="if(window.hovered) document.getElementById('editor').hidden=false">Создать</button>
+          <div id="editor" role="dialog" data-testid="posting_modal_box" hidden>
+            <div contenteditable="true" role="textbox"></div><button>Далее</button>
+          </div>''')
+        self.assertTrue(self.page.evaluate('async()=>{await TriSloga.openComposer();return window.hovered}'))
+
+    def test_modern_music_picker_uses_inner_dialog_checkbox_and_done(self):
+        self.content('''
+          <div id="editor" role="dialog" data-testid="posting_modal_box">
+            <div contenteditable="true" role="textbox"></div>
+            <button onclick="document.getElementById('wrapper').hidden=false">Музыка</button>
+          </div>
+          <div class="box_layout" id="wrapper" hidden>
+            <div role="dialog" id="picker">
+              <input data-testid="posting_audio_search_audio_input" placeholder="Поиск музыки">
+              <div data-testid="posting_audio_audio_track_row">
+                <div data-testid="music-cell"><span data-testid="music-cell-title">Заснежье</span>
+                  <span data-testid="music-cell-artists">Три слога</span><span>4:04</span></div>
+                <input type="checkbox" data-testid="posting_audio_audio_track_selected_icon">
+              </div>
+              <button data-testid="posting_audio_attach_audio_button" onclick="
+                if(document.querySelector('input[type=checkbox]').checked){
+                  document.getElementById('editor').insertAdjacentHTML('beforeend',
+                    '<div data-testid=posting_audio_select_audio_selected><span data-testid=posting_audio_select_audio_selected_title>Заснежье</span><span>Три слога</span><button data-testid=posting_audio_unselect_audio>Удалить</button></div>');
+                  document.getElementById('wrapper').hidden=true;}">Готово</button>
+            </div>
+          </div>''')
+        self.page.evaluate('''()=>{
+          TriSloga.state.audio={id:'-220995299_456239152',title:'Заснежье',artist:'Три слога',duration:'4:04'};
+          TriSloga.state.composer={editor:document.querySelector('[contenteditable]'),root:document.getElementById('editor'),modern:true};
+        }''')
+        self.page.evaluate('async()=>{await TriSloga.attachAudio()}')
+        self.assertFalse(self.page.locator('#wrapper').is_visible())
+        self.assertTrue(self.page.locator('input[type="checkbox"]').is_checked())
+        self.assertIn('Песня сообщества прикреплена',self.page.evaluate('TriSloga.state.logs.at(-1)'))
+
+    def test_final_song_summary_requires_verified_picker_selection(self):
+        self.content('''<div id="root"><div data-testid="posting_audio_select_audio_selected">
+          <span data-testid="posting_audio_select_audio_selected_title">Мастер Тай Чи</span><span>Три слога</span>
+          <button data-testid="posting_audio_unselect_audio">Удалить</button>
+          </div></div>''')
+        result=self.page.evaluate('''()=>{
+          const root=document.getElementById('root');
+          TriSloga.state.audio={id:'-220995299_456239065',title:'Мастер Тай Чи',artist:'Три слога',duration:'4:05'};
+          const unverified=TriSloga.audioAttachments(root).length;
+          TriSloga.state.audioSelectionVerified=TriSloga.state.audio.id;
+          const verified=TriSloga.audioAttachments(root).length;
+          root.querySelector('[data-testid="posting_audio_select_audio_selected_title"]').textContent='Different song';
+          return [unverified,verified,TriSloga.audioAttachments(root).length];
+        }''')
+        self.assertEqual(result,[0,1,0])
+
+    def test_final_photo_preview_requires_recorded_photo_upload(self):
+        self.content('''<div id="root"><div data-testid="posting_preview_attachment_item">
+          <img width="100" height="100" src="https://sun1.vkuserphoto.ru/selected.jpg"></div></div>''')
+        result=self.page.evaluate('''()=>{
+          const root=document.getElementById('root');
+          const before=TriSloga.photoAttachments(root).length;
+          TriSloga.state.photoAttached=true;
+          const after=TriSloga.photoAttachments(root).length;
+          root.querySelector('[data-testid="posting_preview_attachment_item"]').insertAdjacentHTML('beforeend','<video></video>');
+          return [before,after,TriSloga.photoAttachments(root).length];
+        }''')
+        self.assertEqual(result,[0,1,0])
+
+    def test_modern_group_target_does_not_mistake_coauthors_for_author(self):
+        self.content('''<div id="root" role="dialog" data-testid="posting_modal_box">
+          <div data-testid="posting_coowners_cell">Пригласить соавторов</div>
+          <button data-testid="posting_submit_button">Опубликовать</button></div>''')
+        result=self.page.evaluate('''()=>{
+          const root=document.getElementById('root'); TriSloga.state.composer={modern:true};
+          const unknown=TriSloga.authorVerified(root);
+          TriSloga.state.communityContext=true;
+          const community=TriSloga.authorVerified(root);
+          root.insertAdjacentHTML('beforeend','<div class="post_from_group">Personal profile</div>');
+          return [unknown,community,TriSloga.authorVerified(root)];
+        }''')
+        self.assertEqual(result,[False,True,False])
+
+    def test_music_metadata_match_requires_artist_duration_and_id_when_present(self):
+        self.content('''<div id="row" data-testid="music-cell"><span data-testid="music-cell-title">Заснежье</span>
+          <span data-testid="music-cell-artists">Три слога</span><span>4:04</span></div>''')
+        result=self.page.evaluate('''()=>{
+          const row=document.getElementById('row');
+          const audio={id:'-220995299_456239152',title:'Заснежье',artist:'Три слога',duration:'4:04'};
+          const correct=TriSloga.matchesAudio(row,audio);
+          const wrongDuration=TriSloga.matchesAudio(row,{...audio,duration:'3:59'});
+          const wrongArtist=TriSloga.matchesAudio(row,{...audio,artist:'Another artist'});
+          row.dataset.audioId='999_1';
+          return [correct,wrongDuration,wrongArtist,TriSloga.matchesAudio(row,audio)];
+        }''')
+        self.assertEqual(result,[True,False,False,False])
+
+    def test_manual_create_fallback_continues_without_restarting_job(self):
+        self.content('''
+          <button data-testid="group_publish_create_button">Создать</button>
+          <div id="menu" role="dialog" data-testid="dropdownactionsheet" hidden>
+            <div onclick="document.getElementById('menu').hidden=true;document.getElementById('editor').hidden=false"><span>Пост</span></div>
+          </div>
+          <div id="editor" role="dialog" data-testid="posting_modal_box" hidden>
+            <div contenteditable="true" role="textbox"></div><button>Далее</button>
+          </div>''')
+        self.page.evaluate('()=>{window.openOperation=TriSloga.openComposer()}')
+        self.page.wait_for_function('TriSloga.state.logs.some(text=>text.includes("Нажмите «Создать»"))',timeout=10000)
+        self.page.evaluate('document.getElementById("menu").hidden=false')
+        self.assertTrue(self.page.evaluate('async()=>{await openOperation;return true}'))
+
+    def test_saved_vk_snapshot_contains_real_community_audio(self):
+        snapshot = Path(os.environ['LOCALAPPDATA'])/'TriSlogaPublisher/last-error.html'
+        if not snapshot.exists():
+            self.skipTest('No local VK snapshot')
+        from html.parser import HTMLParser
+        # Preserve relevant real audio markup only; never execute saved VK scripts.
+        class Rows(HTMLParser):
+            def __init__(self):
+                super().__init__(); self.ids=[]
+            def handle_starttag(self, tag, attrs):
+                a=dict(attrs)
+                if a.get('data-audio-id', '').startswith('-220995299_'):
+                    self.ids.append(a['data-audio-id'])
+        rows=Rows(); rows.feed(snapshot.read_text(encoding='utf-8'))
+        self.assertGreater(len(rows.ids), 0)
+        html=''.join(f'<div data-audio-id="{ident}"><span data-testid="MusicTrackRow_Title">Song</span></div>' for ident in rows.ids)
+        self.content(html)
+        result=self.page.evaluate('TriSloga.audioCandidates()')
+        self.assertEqual({r['id'] for r in result}, set(rows.ids))
+
+    def test_background_locks_and_uncertain_publish_do_not_retry(self):
+        self.page.add_script_tag(path=str(EXT/'background.js'))
+        result = self.page.evaluate('''async () => {
+          const sender={id:'test-extension',url:location.href,tab:{id:7,url:location.href}};
+          const send=message=>new Promise(resolve=>testListeners[0](message,sender,resolve));
+          const claims=await Promise.all([send({type:'claim'}),send({type:'claim'})]);
+          const jobId=claims.find(r=>r.ok).jobId;
+          const start=await send({type:'beginPublish',jobId,photo:'-220995299_1',audio:'-220995299_2'});
+          await send({type:'release',jobId});
+          const retry=await send({type:'claim'});
+          delete testStorage.publicationAttempt;
+          const reset=await send({type:'claim'});
+          return {successfulClaims:claims.filter(r=>r.ok).length,start:start.ok,retry:retry.ok,reset:reset.ok};
+        }''')
+        self.assertEqual(result, {'successfulClaims':1,'start':True,'retry':False,'reset':True})
+
+    def test_image_allowlist_rejects_lookalike_domains(self):
+        self.page.add_script_tag(path=str(EXT/'background.js'))
+        results = self.page.evaluate('''() => [
+          allowedImage('https://sun1.vkuserphoto.ru/photo.jpg'),
+          allowedImage('https://vkuserphoto.ru.attacker.example/photo.jpg'),
+          allowedImage('http://sun1.vkuserphoto.ru/photo.jpg'),
+          allowedImage('https://evil@sun1.vkuserphoto.ru/photo.jpg')
+        ]''')
+        self.assertEqual(results, [True,False,False,False])
+
+    def test_manifest_references_packaged_files(self):
+        manifest=json.loads((EXT/'manifest.json').read_text(encoding='utf-8'))
+        self.assertEqual(manifest['manifest_version'],3)
+        for file in (manifest['background']['service_worker'],manifest['action']['default_popup'], 'content.js', 'popup.js', 'popup.css'):
+            self.assertTrue((EXT/file).is_file(), file)
+
+    def test_popup_uses_existing_community_tab(self):
+        self.page.set_content((EXT/'popup.html').read_text(encoding='utf-8'))
+        self.page.add_style_tag(path=str(EXT/'popup.css'))
+        self.page.evaluate('''() => {
+          window.calls=[];
+          chrome.tabs={query:async()=>[{id:7,url:'https://vk.ru/tri_sloga_band',active:true}],
+            update:async(id,opts)=>{calls.push(['update',id]);return {id,url:location.href}},
+            create:async()=>{throw Error('Must not create another tab')},
+            get:async()=>({status:'complete'}),
+            sendMessage:async(id,msg)=>{calls.push(['start',id,msg.automatic]);return {ok:true}}};
+          chrome.scripting={executeScript:async()=>{}};
+        }''')
+        self.page.add_script_tag(path=str(EXT/'popup.js'))
+        self.page.get_by_role('button', name='Создать пост', exact=True).click()
+        self.page.wait_for_function('document.getElementById("status").textContent.includes("Ход работы")')
+        self.assertEqual(self.page.evaluate('calls'), [['update',7],['start',7,True]])
+        self.page.screenshot(path=str(ROOT/'extension-preview.png'))
+
+    def test_live_album_layout_with_overlay_link_uses_parent_image(self):
+        self.page.set_content('''<div class="photos_row" data-id="-220995299_457239019"
+          style="background-image:url(https://sun9-26.vkuserphoto.ru/community.jpg);width:185px;height:127px">
+          <a href="/photo-220995299_457239019"></a></div>''')
+        self.page.evaluate('''()=>{
+          window.tabCalls=[];
+          chrome.tabs={create:async opts=>{tabCalls.push(opts);return {id:12}},
+            get:async()=>({status:'complete'}),remove:async id=>tabCalls.push({closed:id})};
+          chrome.scripting={executeScript:async opts=>[{result:await opts.func()}]};
+        }''')
+        self.page.add_script_tag(path=str(EXT/'background.js'))
+        result=self.page.evaluate('''async()=>{
+          const sender={id:'test-extension',url:location.href,tab:{id:7,windowId:3,url:location.href}};
+          const response=await new Promise(resolve=>testListeners[0]({type:'album',url:'https://vk.ru/album-220995299_293799855'},sender,resolve));
+          return {response,calls:tabCalls};
+        }''')
+        self.assertTrue(result['response']['ok'])
+        self.assertEqual(result['response']['photos'][0]['id'],'-220995299_457239019')
+        self.assertEqual(result['response']['photos'][0]['image'],'https://sun9-26.vkuserphoto.ru/community.jpg')
+        self.assertEqual(result['calls'][0]['active'],False)
+        self.assertEqual(result['calls'][0]['windowId'],3)
+        self.assertEqual(result['calls'][-1],{'closed':12})
+
+    def test_complete_workflow_publishes_once_and_preserves_comments(self):
+        self.content('''
+          <a id="top_profile_link" href="/me">Profile</a>
+          <h1 data-testid="group-name">Три Слога</h1><button data-testid="group_manage_menu_manage">Управление</button>
+          <button data-testid="group_tab_photos">Фото</button>
+          <button data-testid="group_tab_audios">Музыка</button>
+          <button data-testid="group_tab_wall">Посты</button>
+          <a href="/photo-220995299_123"><img width="50" height="50" src="https://sun1.vkuserphoto.ru/community.jpg"></a>
+          <div data-audio-id="-220995299_456"><span data-testid="MusicTrackRow_Title">Song</span><span data-testid="MusicTrackRow_Authors">Три Слога</span></div>
+          <div contenteditable="true" role="textbox" aria-label="Написать комментарий">untouched comment</div>
+          <section data-testid="group_publish_block"><button data-testid="group_publish_create_button" onclick="document.getElementById('editor').hidden=false">Создать</button></section>
+          <div id="editor" role="dialog" data-testid="posting_modal_box" hidden>
+            <div data-testid="posting_coowners_cell">Пригласить соавторов</div>
+            <div role="textbox" contenteditable="true" aria-label="Текст публикации"></div>
+            <input type="file" accept="image/*" onchange="this.insertAdjacentHTML('afterend','<div class=page_preview_photo>photo attached</div>')">
+            <button onclick="document.getElementById('picker').hidden=false"><span style="position:absolute;left:-10000px">Музыка</span></button>
+            <button data-testid="posting_base_screen_next" onclick="window.nextCount=(window.nextCount||0)+1;document.getElementById('publish').hidden=false;
+              document.querySelector('.page_preview_photo').outerHTML='<div data-testid=posting_preview_attachment_item><img width=100 height=100 src=https://sun1.vkuserphoto.ru/uploaded.jpg></div>';this.remove()">Далее</button>
+            <button id="publish" data-testid="posting_submit_button" hidden onclick="window.publishCount=(window.publishCount||0)+1;document.getElementById('post').textContent=this.parentElement.querySelector('[contenteditable]').textContent;this.parentElement.hidden=true">Опубликовать</button>
+          </div>
+          <div id="picker" role="dialog" hidden>
+            <div data-audio-id="-220995299_456"><button onclick="document.getElementById('editor').insertAdjacentHTML('beforeend',
+              '<div data-testid=posting_audio_select_audio_selected><span data-testid=posting_audio_select_audio_selected_title>Song</span><span>Три Слога</span><button data-testid=posting_audio_unselect_audio>Удалить</button></div>');document.getElementById('picker').hidden=true">Добавить</button></div>
+          </div>
+          <article id="post" data-testid="post"></article>
+        ''')
+        self.page.evaluate('''() => {chrome.runtime.sendMessage=async msg=>{
+          if(msg.type==='claim') return {ok:true,jobId:'fixture'};
+          if(msg.type==='image') return {ok:true,base64:btoa('fake fixture bytes'),mime:'image/jpeg'};
+          return {ok:true};
+        }}''')
+        self.page.evaluate('''async()=>{await TriSloga.run({automatic:true,quote:'Любовь наполняет нашу жизнь светом.'})}''')
+        self.assertEqual(self.page.evaluate('window.publishCount'),1)
+        self.assertEqual(self.page.evaluate('window.nextCount'),1)
+        self.assertEqual(self.page.get_by_role('textbox',name='Написать комментарий').inner_text(),'untouched comment')
+        logs=self.page.evaluate('TriSloga.state.logs')
+        self.assertIn('Пост опубликован',logs[-1])
+
+
+if __name__=='__main__':
+    unittest.main()

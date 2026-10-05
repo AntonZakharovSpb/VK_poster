@@ -1,0 +1,73 @@
+Три Слога — Chrome extension 0.1.3
+
+INSTALL ONCE
+1. In your NORMAL Chrome window, open chrome://extensions
+2. Enable Developer mode (Режим разработчика).
+3. Click Load unpacked (Загрузить распакованное расширение).
+4. Choose this exact folder:
+   C:\Users\Anton\Documents\TriSlogaPublisher\extension
+5. Pin "Три Слога — публикации VK" using Chrome's Extensions menu.
+
+USE
+Log into VK in your normal Chrome profile.
+Open https://vk.ru/tri_sloga_band and click the extension icon.
+For initial calibration, uncheck "Сразу публиковать" and click "Создать пост".
+The extension reuses an existing community tab. If there is no community tab,
+it opens one in the same Chrome profile; other tabs are preserved.
+The job continues in the page when the popup closes. Its log appears in the
+bottom-right corner of VK. "Остановить" stops subsequent actions.
+If VK ignores the automatic Create action, the extension asks you to click
+Создать on the page and waits up to two minutes before continuing.
+
+UPDATING AN EXISTING INSTALLATION
+Click Reload on this extension's card in chrome://extensions, then refresh
+the VK community tab. No reinstallation or new VK login is required.
+
+Photo source: https://vk.ru/tri_sloga_band#section=photos
+Music source: the community's Music tab. Media IDs are checked against the
+community's owner ID -220995299. Selection is random among loaded items.
+If Photos shows albums, a random loaded album is opened in a temporary inactive
+tab, a photo is chosen from its loaded items, and the temporary tab is closed.
+This is not a uniform sample of every photo in all albums.
+Photo image: the rendition displayed by VK, downloaded and uploaded into the
+new post. It is not guaranteed to be the original full-resolution photo.
+Audio: match the community audio ID when VK exposes it. In modern music
+pickers without IDs, require a unique matching title, artist and duration.
+Quote: fetched from Russian Wikiquote, with source credit, or enter your own
+text containing the whole word любовь or счастье.
+
+Automatic mode clicks Publish ONCE after checking photo, audio and community
+author. Preview mode leaves the draft for you to inspect/publish manually.
+The modern settings screen uses compact song/photo previews. Song selection
+is checked in the picker first, then its final title and artist are checked.
+If the modern group editor has no author selector, its destination is checked
+from the community admin Create block that opened the dialog. An explicit
+author selector takes precedence and must identify the community.
+If a publication result is uncertain, sending again is blocked. Check the
+wall before using the panel button that permits a new attempt.
+Do not use the older Windows publisher at the same time.
+
+STATUS
+The package and browser fixture tests have been checked. End-to-end posting
+has NOT been confirmed in your normal Chrome session. VK's live editor,
+upload preview, author selector and music picker may require calibration.
+On an error the extension leaves VK open and records the failing stage.
+Click "Диагностика" in the extension popup to save tri-sloga-diagnostic.json.
+The report contains UI labels, media IDs and logs, not browser cookies or
+access tokens. Keep it private if it contains personal UI labels.
+
+CUSTOMIZE
+All source is in this folder. Edit popup.html/popup.css for the controls,
+content.js for media/editor behavior, background.js for quote/image fetching.
+After an edit, click Reload on the extension's card in chrome://extensions
+and refresh the VK tab so it uses the new content script.
+No Python, VPN, paid API or cloud AI is needed by the extension.
+Chrome does not allow ordinary unsigned extensions to be installed simply
+by double-clicking a file; the Load unpacked step is required.
+
+PERMISSIONS
+VK: operate in your community tab with your existing login.
+Wikiquote: fetch Russian quotes.
+VK image hosts: fetch the selected community photo.
+Local extension storage: mode setting, operation lock and diagnostics.
+The extension does not read browser cookie APIs or store your password.
