@@ -351,6 +351,7 @@ class ExtensionTests(unittest.TestCase):
         self.assertEqual(self.page.get_by_role('textbox',name='Написать комментарий').inner_text(),'untouched comment')
         logs=self.page.evaluate('TriSloga.state.logs')
         self.assertIn('Пост опубликован',logs[-1])
+        self.assertEqual(self.page.locator('#tri-sloga-extension-panel').count(),0)
         self.assertEqual(self.page.evaluate('sentMessages.find(m=>m.type==="scheduleResult")'),
                          {'type':'scheduleResult','runId':'scheduled-fixture','success':True})
 
@@ -365,6 +366,26 @@ class ExtensionTests(unittest.TestCase):
         self.assertFalse(result['success'])
         self.assertIn('Войдите в VK', result['error'])
         self.assertTrue(self.page.evaluate('sentMessages.some(m=>m.type==="release")'))
+        self.assertTrue(self.page.locator('#tri-sloga-extension-panel').is_visible())
+        self.assertIn('Войдите в VK', self.page.locator('#tri-sloga-extension-panel').evaluate('el=>el.shadowRoot.querySelector("pre").textContent'))
+
+    def test_popup_fixed_button_retries_failure_and_hides_after_retry(self):
+        self.page.set_content((EXT/'popup.html').read_text(encoding='utf-8'))
+        self.page.evaluate('''()=>{
+          window.calls=[];
+          chrome.storage.onChanged={addListener:()=>{}};
+          chrome.runtime.sendMessage=async msg=>{
+            calls.push(msg);
+            return {ok:true,schedule:{enabled:true,intervalHours:3,nextRunAt:msg.type==='scheduleRetry'?Date.now()+10800000:null},
+              scheduleStatus:msg.type==='scheduleRetry'?{running:true}:{needsFix:true,error:'VK не загрузился'}};
+          };
+        }''')
+        self.page.add_script_tag(path=str(EXT/'popup.js'))
+        self.page.locator('#fixed').wait_for(state='visible')
+        self.assertIn('VK не загрузился', self.page.locator('#status').inner_text())
+        self.page.locator('#fixed').click()
+        self.page.locator('#fixed').wait_for(state='hidden')
+        self.assertEqual(self.page.evaluate('calls.at(-1)'), {'type':'scheduleRetry','confirmNoPost':False})
 
     def test_stale_stop_message_does_not_cancel_new_scheduled_run(self):
         self.content('<div></div>')

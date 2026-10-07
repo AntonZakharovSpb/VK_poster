@@ -2,6 +2,8 @@ const status = document.getElementById('status');
 const interval = document.getElementById('interval');
 const enable = document.getElementById('enable');
 const disable = document.getElementById('disable');
+const fixed = document.getElementById('fixed');
+let needsWallCheck = false;
 
 async function command(data) {
   const reply = await chrome.runtime.sendMessage(data);
@@ -13,11 +15,14 @@ function render({schedule, scheduleStatus}) {
   if (schedule?.intervalHours) interval.value = schedule.intervalHours;
   enable.textContent = enabled ? 'Сохранить интервал' : 'Включить';
   disable.disabled = !enabled;
+  fixed.hidden = !enabled || !scheduleStatus?.needsFix;
+  needsWallCheck = !!scheduleStatus?.uncertain;
   const lines = [enabled ? 'Автопубликация включена.' : 'Автопубликация выключена.'];
   if (enabled && schedule.nextRunAt) lines.push('Следующая попытка: ' + new Date(schedule.nextRunAt).toLocaleString('ru-RU'));
   if (scheduleStatus?.running) lines.push('Создаю пост во вкладке VK…');
   else if (scheduleStatus?.success) lines.push('Последний пост опубликован: ' + new Date(scheduleStatus.time).toLocaleString('ru-RU'));
   else if (scheduleStatus?.error) lines.push('Последняя ошибка: ' + scheduleStatus.error);
+  if (enabled && scheduleStatus?.needsFix) lines.push('Расписание приостановлено. Устраните причину и нажмите «Исправлено — повторить».');
   status.textContent = lines.join('\n');
 }
 async function refresh() {
@@ -31,6 +36,13 @@ enable.addEventListener('click', async () => {
   try { render(await command({type:'scheduleSet', intervalHours:Number(interval.value)})); }
   catch (error) { status.textContent = error.message; }
   finally { enable.disabled = false; }
+});
+fixed.addEventListener('click', async () => {
+  if (needsWallCheck && !confirm('Проверьте стену: предыдущий пост мог появиться. Вы подтверждаете, что его нет, и хотите создать новый?')) return;
+  fixed.disabled = true;
+  try { render(await command({type:'scheduleRetry', confirmNoPost:needsWallCheck})); }
+  catch (error) { status.textContent = error.message; }
+  finally { fixed.disabled = false; }
 });
 disable.addEventListener('click', async () => {
   try { await command({type:'scheduleStop'}); await refresh(); }

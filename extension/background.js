@@ -104,7 +104,8 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
   const fromVK = sender.tab && /^https:\/\/(vk\.ru|vk\.com)\//.test(sender.url || sender.tab.url || '');
   if (!fromExtension) return;
   const task = async () => {
-    if (['scheduleSet', 'scheduleStop', 'scheduleStatus', 'scheduleResult'].includes(message.type)) {
+    if (['scheduleSet', 'scheduleStop', 'scheduleStatus', 'scheduleResult', 'scheduleRetry'].includes(message.type)) {
+      if (message.type === 'scheduleRetry' && sender.tab && !fromVK) throw new Error('Повтор доступен только из VK.');
       if (message.type === 'scheduleResult' && !fromVK) throw new Error('Результат должен поступить из VK.');
       if (['scheduleSet', 'scheduleStatus'].includes(message.type) && sender.tab) throw new Error('Используйте настройки расширения.');
       return scheduleCommand(message, sender);

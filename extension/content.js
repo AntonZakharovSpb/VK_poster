@@ -70,7 +70,15 @@
       host.style.cssText = 'position:fixed;right:18px;bottom:18px;z-index:2147483647';
       document.documentElement.append(host);
       const root = host.attachShadow({mode: 'open'});
-      root.innerHTML = `<style>:host{font:13px "Segoe UI",sans-serif;color:#17212d}section{width:330px;background:white;border:1px solid #d4dfec;box-shadow:0 8px 32px #17212d25;border-radius:16px;padding:16px}header{display:flex;justify-content:space-between;align-items:center;font-size:16px;font-weight:600}pre{white-space:pre-wrap;overflow:auto;max-height:220px;font:12px/1.6 "Segoe UI",sans-serif;color:#4c5e73}button{border:0;border-radius:8px;padding:8px 10px;background:#e9f1fc;color:#006edd;cursor:pointer;font:12px "Segoe UI"}.actions{display:flex;gap:8px;flex-wrap:wrap}.reset{margin-top:8px}small{color:#657688;font-size:11px}</style><section><header>Три Слога <button id="hide">Скрыть</button></header><pre></pre><div class="actions"><button id="stop">Остановить</button><button id="copy">Копировать журнал</button></div><button class="reset" id="reset">Я проверил стену: разрешить новую попытку</button><p><small>Фото + песня + цитата. Окно VK останется открытым.</small></p></section>`;
+      root.innerHTML = `<style>:host{font:13px "Segoe UI",sans-serif;color:#17212d}section{width:330px;background:white;border:1px solid #d4dfec;box-shadow:0 8px 32px #17212d25;border-radius:16px;padding:16px}header{display:flex;justify-content:space-between;align-items:center;font-size:16px;font-weight:600}pre{white-space:pre-wrap;overflow:auto;max-height:220px;font:12px/1.6 "Segoe UI",sans-serif;color:#4c5e73}button{border:0;border-radius:8px;padding:8px 10px;background:#e9f1fc;color:#006edd;cursor:pointer;font:12px "Segoe UI"}.actions{display:flex;gap:8px;flex-wrap:wrap}.reset{margin-top:8px}small{color:#657688;font-size:11px}</style><section><header>Три Слога <button id="hide">Скрыть</button></header><pre></pre><div class="actions"><button id="stop">Остановить</button><button id="copy">Копировать журнал</button></div><button class="reset" id="fixed">Исправлено — повторить</button><button class="reset" id="reset">Я проверил стену: разрешить новую попытку</button><p><small>Устраните причину ошибки и нажмите «Исправлено — повторить».</small></p></section>`;
+      root.getElementById('fixed').onclick = async () => {
+        if (state.running) return;
+        const {publicationAttempt} = await chrome.storage.local.get('publicationAttempt');
+        const uncertain = publicationAttempt?.status === 'pending';
+        if (uncertain && !confirm('Проверьте стену: предыдущий пост мог появиться. Подтвердите, что его нет, прежде чем создавать новый.')) return;
+        try { await message({type:'scheduleRetry', confirmNoPost:uncertain}); }
+        catch (error) { panel(); log(error.message); }
+      };
       root.getElementById('hide').onclick = () => { host.style.display = 'none'; };
       root.getElementById('stop').onclick = () => {
         state.stopped = true; log('Останавливаю действия и расписание…');
@@ -88,6 +96,7 @@
       };
       state.panel = root;
     } else { host.style.display = 'block'; }
+    state.panel.querySelector('pre').textContent = state.logs.join('\n');
   }
 
   function photoCandidates(scope = document) {
@@ -422,7 +431,7 @@
   }
   function diagnostics(error = '') {
     const scope = currentComposerRoot() || document;
-    return {version: '0.2.0', time: new Date().toISOString(), stage: state.stage, error,
+    return {version: '0.3.0', time: new Date().toISOString(), stage: state.stage, error,
       page: location.origin + location.pathname + location.hash,
       photo: state.photo?.id, audio: state.audio?.id,
       communityContext: state.communityContext, photoAttached: state.photoAttached, audioSelectionVerified: state.audioSelectionVerified,
@@ -445,14 +454,15 @@
     state.running = true; state.stopped = false; state.logs = []; state.composer = null; state.photoPreview = null;
     state.scheduleRunId = options.scheduleRunId || null;
     state.photoAttached = false; state.audioSelectionVerified = null; state.communityContext = false;
-    panel();
+    const oldPanel = document.getElementById('tri-sloga-extension-panel');
+    if (oldPanel) oldPanel.style.display = 'none';
     let jobId, outcome = {success: false, error: 'Публикация не завершена.'};
     try {
       const claim = await message({type: 'claim'}); jobId = claim.jobId;
       log('Запуск в вашей текущей вкладке VK.');
       state.stage = 'login';
       if (!all(document, '#top_profile_link,#l_pr,[data-testid="header-profile-menu-button"]').some(visible)) {
-        throw new Error('Войдите в VK в этой вкладке, затем нажмите «Создать пост» ещё раз.');
+        throw new Error('Войдите в VK в этой вкладке, затем нажмите «Исправлено — повторить».');
       }
       if (composerCandidates().length) throw new Error('Уже открыт черновик. Завершите или закройте его перед запуском.');
       state.stage = 'quote'; const text = await getQuote(options.quote);
@@ -481,7 +491,7 @@
       await message({type: 'completePublish', jobId});
       log('Пост опубликован на стене сообщества.');
       outcome = {success: true};
-    } catch (error) { outcome = {success: false, error: error.message}; log('Остановлено: ' + error.message); }
+    } catch (error) { outcome = {success: false, error: error.message}; log('Остановлено: ' + error.message); panel(); }
     finally {
       try { await message({type: 'diagnostic', data: diagnostics(state.logs.at(-1))}); } catch { /* Log remains visible. */ }
       if (jobId) { try { await message({type: 'release', jobId}); } catch { /* Lease expires. */ } }

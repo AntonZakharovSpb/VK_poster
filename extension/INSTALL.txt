@@ -1,4 +1,4 @@
-Три Слога — Chrome extension 0.2.0
+Три Слога — Chrome extension 0.3.0
 
 INSTALL ONCE
 1. In your NORMAL Chrome window, open chrome://extensions
@@ -16,14 +16,22 @@ Only the interval is configurable: quotes, photos and songs are selected
 automatically, and Publish is clicked after all attachment/author checks pass.
 The extension reuses an existing community tab. If there is no community tab,
 it opens one in the same Chrome profile; other tabs are preserved.
-The job continues in the page when the popup closes. Its log appears in the
-bottom-right corner of VK. "Остановить" stops subsequent actions.
+The job continues in the page when the popup closes. The action log stays
+hidden during normal work and appears only when there is a problem.
+"Остановить" in the popup stops subsequent actions and disables the schedule.
 If VK ignores the automatic Create action, the scheduled job stops and
 notifies you; it does not wait for a manual click.
 
 SCHEDULE AND ALERTS
-Chrome must be running and your computer awake. A missed interval after sleep
-or a browser restart runs at most once, without publishing a backlog.
+Chrome must be running and your computer awake. Each full Chrome startup with
+automation enabled immediately attempts one post and resets the countdown,
+even if the previous interval was not due. After device shutdown this happens
+when Chrome starts. A missed interval after sleep runs at most once, without
+publishing a backlog. Worker restarts do not trigger an extra post.
+Closing the last normal Chrome window pauses attempts even if Chrome keeps
+running in background mode. Reopening a normal window immediately starts
+one post and a new countdown. Opening another window while Chrome already
+has a normal window does not trigger an additional post.
 The enabled state, interval and next attempt are saved in extension storage.
 Reloading the extension resumes that schedule; it does not immediately post
 again unless an attempt is due. Changing an active interval schedules the
@@ -36,7 +44,15 @@ your VPN and connection. This detects a loading failure, not the VPN itself.
 Other publication errors also produce a notification. A red toolbar badge
 and the last error in the popup remain available if Windows silences alerts.
 Click a notification to open or select the community tab.
-The next normal interval is retained after failure; there is no rapid retry.
+Failure pauses automatic attempts. Fix the cause and click
+"Исправлено — повторить" in the popup, on-page error panel, or notification.
+This immediately retries and starts a fresh countdown from the retry time.
+After a loading failure the community tab is refreshed during the retry.
+If the retry fails, posting stays paused. Restarting Chrome or saving a new
+interval does not bypass a paused failure; use "Исправлено — повторить".
+If publication is uncertain, check the wall and confirm that the post is
+absent before retrying through the popup or error panel. The notification
+button does not bypass this confirmation.
 An interrupted job is reported by a 15-minute watchdog.
 
 UPDATING AN EXISTING INSTALLATION
@@ -53,8 +69,8 @@ Photo image: the rendition displayed by VK, downloaded and uploaded into the
 new post. It is not guaranteed to be the original full-resolution photo.
 Audio: match the community audio ID when VK exposes it. In modern music
 pickers without IDs, require a unique matching title, artist and duration.
-Quote: fetched from Russian Wikiquote, with source credit, or enter your own
-text containing the whole word любовь or счастье.
+Quote: fetched automatically from Russian Wikiquote, with source credit,
+containing the whole word любовь or счастье.
 
 Each scheduled attempt clicks Publish ONCE after checking photo, audio and
 community author. Existing drafts are preserved and cause the attempt to stop.

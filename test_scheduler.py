@@ -27,6 +27,8 @@ class SchedulerTests(unittest.TestCase):
             storage:{local:{get:async keys=>Object.fromEntries((Array.isArray(keys)?keys:[keys]).map(k=>[k,store[k]])),
               set:async data=>Object.assign(store,data),remove:async key=>{delete store[key]}}},
             runtime:{onStartup:{addListener:fn=>listeners.startup=fn},onInstalled:{addListener:fn=>listeners.install=fn}},
+            windows:{getAll:async()=>[{id:1,type:'normal'}],create:async opts=>{calls.push({type:'window',...opts});return {tabs:[{id:8}]};},onRemoved:{addListener:fn=>listeners.windowRemoved=fn},
+              onCreated:{addListener:fn=>listeners.windowCreated=fn}},
             alarms:{get:async name=>alarms[name],create:async(name,data)=>{alarms[name]=data},
               clear:async name=>{delete alarms[name]},onAlarm:{addListener:fn=>listeners.alarm=fn}},
             tabs:{query:async()=>[{id:7,url:'https://vk.ru/tri_sloga_band',active:true}],
@@ -35,7 +37,8 @@ class SchedulerTests(unittest.TestCase):
               get:async()=>({status:'complete'}),sendMessage:async(id,msg)=>{calls.push({id,...msg});return {ok:true}}},
             scripting:{executeScript:async opts=>{calls.push({type:'script',...opts,func:undefined});return [{result:true}]}},
             action:{setBadgeText:async data=>calls.push({type:'badge',...data}),setBadgeBackgroundColor:async()=>{}},
-            notifications:{create:async(id,data)=>calls.push({...data,type:'notification',id}),onClicked:{addListener:fn=>listeners.click=fn}}
+            notifications:{create:async(id,data)=>calls.push({...data,type:'notification',id}),clear:async()=>{},onClicked:{addListener:fn=>listeners.click=fn},
+              onButtonClicked:{addListener:fn=>listeners.button=fn}}
           };
         }''')
         self.page.add_script_tag(path=str(EXT/'scheduler.js'))
@@ -87,14 +90,17 @@ class SchedulerTests(unittest.TestCase):
         self.page.evaluate('launchScheduledRun()')
         self.assertEqual(self.page.evaluate('calls.filter(c=>c.type==="start").length'), 1)
 
-    def test_network_failure_notifies_with_vpn_hint_and_keeps_schedule(self):
+    def test_network_failure_notifies_and_pauses_until_fixed(self):
         self.page.evaluate('()=>{waitForCommunity=async()=>{throw Error("Network timeout")}}')
         self.enable()
         self.assertEqual(self.page.evaluate('calls.filter(c=>c.type==="start").length'), 0)
         self.assertIn('VPN', self.page.evaluate('calls.find(c=>c.type==="notification").message'))
         self.assertTrue(self.page.evaluate('store.schedule.enabled'))
-        self.assertTrue(self.page.evaluate('!!alarms[SCHEDULE_ALARM]'))
+        self.assertFalse(self.page.evaluate('!!alarms[SCHEDULE_ALARM]'))
         self.assertFalse(self.page.evaluate('!!store.scheduleRun'))
+        self.assertTrue(self.page.evaluate('store.scheduleStatus.needsFix'))
+        self.page.evaluate('restoreSchedule()')
+        self.assertFalse(self.page.evaluate('!!alarms[SCHEDULE_ALARM]'))
 
     def test_network_error_page_does_not_count_as_loaded(self):
         self.page.evaluate('()=>{chrome.scripting.executeScript=async()=>{throw Error("Cannot access chrome-error page")}}')
@@ -152,6 +158,102 @@ class SchedulerTests(unittest.TestCase):
           return {enabled:enabled.schedule.enabled,rejected:rejected.ok};
         }''')
         self.assertEqual(result, {'enabled': True, 'rejected': False})
+
+    def test_browser_start_posts_immediately_and_resets_countdown(self):
+        self.page.evaluate('''()=>{
+          store.schedule={enabled:true,intervalHours:3,nextRunAt:Date.now()+9999999,generation:'old'};
+          store.activeJob={expires:Date.now()+900000};
+          store.scheduleRun={id:'old-run',tabId:7,expires:Date.now()+900000};
+        }''')
+        self.page.evaluate('browserStarted()')
+        self.assertEqual(self.page.evaluate('calls.filter(c=>c.type==="start").length'), 1)
+        self.assertFalse(self.page.evaluate('!!store.activeJob'))
+        self.assertAlmostEqual(self.page.evaluate('(store.schedule.nextRunAt-Date.now())/3600000'),3,places=3)
+        self.page.evaluate('browserStarted()')
+        self.assertEqual(self.page.evaluate('calls.filter(c=>c.type==="start").length'), 1)
+
+    def test_browser_start_does_not_enable_disabled_schedule(self):
+        self.page.evaluate('store.schedule={enabled:false,intervalHours:3}')
+        self.page.evaluate('browserStarted()')
+        self.assertEqual(self.page.evaluate('calls.filter(c=>c.type==="start").length'), 0)
+
+    def test_startup_and_due_alarm_do_not_launch_twice(self):
+        self.enable()
+        self.page.evaluate('browserStarted()')
+        self.assertEqual(self.page.evaluate('calls.filter(c=>c.type==="start").length'), 1)
+
+    def test_fixed_retries_once_refreshes_network_failure_and_resets_timer(self):
+        self.page.evaluate('()=>{waitForCommunity=async()=>{throw Error("VK timeout")}}')
+        self.enable()
+        self.page.evaluate('()=>{waitForCommunity=async()=>{}}')
+        self.page.evaluate('scheduleCommand({type:"scheduleRetry"},{})')
+        self.assertEqual(self.page.evaluate('calls.filter(c=>c.type==="start").length'), 1)
+        self.assertTrue(self.page.evaluate('calls.some(c=>c.type==="tab" && c.url===COMMUNITY_URL)'))
+        self.assertAlmostEqual(self.page.evaluate('(store.schedule.nextRunAt-Date.now())/3600000'),2,places=3)
+        self.assertTrue(self.page.evaluate('store.scheduleStatus.running'))
+
+    def test_retry_cannot_silently_clear_uncertain_publication(self):
+        self.page.evaluate('store.publicationAttempt={status:"pending"}')
+        self.enable()
+        self.page.evaluate('scheduleCommand({type:"scheduleRetry"},{})')
+        self.assertEqual(self.page.evaluate('calls.filter(c=>c.type==="start").length'), 0)
+        self.assertEqual(self.page.evaluate('store.publicationAttempt.status'), 'pending')
+        self.page.evaluate('scheduleCommand({type:"scheduleRetry",confirmNoPost:true},{})')
+        self.assertEqual(self.page.evaluate('calls.filter(c=>c.type==="start").length'), 1)
+
+    def test_failed_retry_stays_paused_and_interval_change_cannot_resume(self):
+        self.page.evaluate('()=>{waitForCommunity=async()=>{throw Error("Network failure")}}')
+        self.enable()
+        self.page.evaluate('scheduleCommand({type:"scheduleRetry"},{})')
+        self.enable(5)
+        self.assertTrue(self.page.evaluate('store.scheduleStatus.needsFix'))
+        self.assertFalse(self.page.evaluate('!!alarms[SCHEDULE_ALARM]'))
+
+    def test_browser_restart_preserves_failure_waiting_for_fixed(self):
+        self.page.evaluate('''()=>{
+          store.schedule={enabled:true,intervalHours:3,generation:'old',nextRunAt:null};
+          store.scheduleStatus={needsFix:true,error:'VK unavailable'};
+        }''')
+        self.page.evaluate('browserStarted()')
+        self.assertEqual(self.page.evaluate('calls.filter(c=>c.type==="start").length'), 0)
+        self.assertTrue(self.page.evaluate('store.scheduleStatus.needsFix'))
+
+    def test_closing_last_window_suspends_and_reopening_posts_immediately(self):
+        self.enable()
+        self.page.evaluate('''async()=>{
+          chrome.windows.getAll=async()=>[];
+          await browserWindowsClosed();
+          await restoreSchedule();
+          await launchScheduledRun();
+        }''')
+        self.assertFalse(self.page.evaluate('!!alarms[SCHEDULE_ALARM]'))
+        self.assertEqual(self.page.evaluate('calls.filter(c=>c.type==="start").length'),1)
+        self.page.evaluate('''async()=>{
+          chrome.windows.getAll=async()=>[{id:2,type:'normal'}];
+          listeners.windowCreated({type:'normal'});
+        }''')
+        self.page.wait_for_function('calls.filter(c=>c.type==="start").length===2')
+        self.assertFalse(self.page.evaluate('!!store.browserClosed'))
+        self.assertAlmostEqual(self.page.evaluate('(store.schedule.nextRunAt-Date.now())/3600000'),2,places=3)
+
+    def test_closing_one_of_several_windows_does_not_restart_schedule(self):
+        self.enable()
+        self.page.evaluate('browserWindowsClosed()')
+        self.assertFalse(self.page.evaluate('!!store.browserClosed'))
+        self.assertTrue(self.page.evaluate('!!store.scheduleRun'))
+
+    def test_fixed_notification_can_reopen_closed_browser_to_retry(self):
+        self.page.evaluate('''()=>{
+          store.schedule={enabled:true,intervalHours:2,generation:'old'};
+          store.scheduleStatus={needsFix:true,loading:true,error:'VK timeout'};
+          store.browserClosed=true;
+          chrome.tabs.query=async()=>[];
+          chrome.windows.getAll=async()=>[];
+        }''')
+        self.page.evaluate('scheduleCommand({type:"scheduleRetry"},{})')
+        self.assertEqual(self.page.evaluate('calls.filter(c=>c.type==="normal" && c.url===COMMUNITY_URL).length'),1)
+        self.assertFalse(self.page.evaluate('!!store.browserClosed'))
+        self.assertEqual(self.page.evaluate('calls.filter(c=>c.type==="start").length'),1)
 
 
 if __name__ == '__main__':
