@@ -157,7 +157,9 @@
     state.stage = 'community music';
     await section('audios');
     const audios = await until(() => { const items = audioCandidates(); return items.length ? items : null; }, 'песни сообщества');
-    state.audio = audios[Math.floor(Math.random() * audios.length)];
+    const matching = matchingCommunityAudio(audios, state.songTitle);
+    state.audio = matching || audios[Math.floor(Math.random() * audios.length)];
+    if (state.songTitle && !matching) log('Песня с похожим названием не найдена. Выбираю случайную песню сообщества.');
     log(`Выбрана песня: ${state.audio.artist} — ${state.audio.title}.`);
     await section('wall');
   }
@@ -461,27 +463,79 @@
     return state.communityContext && state.composer?.modern && location.pathname === PATH &&
       root.dataset.testid === 'posting_modal_box' && !!root.querySelector('[data-testid="posting_submit_button"]');
   }
-  function parseQuotes(html) {
+  function parseSongs(html) {
     const doc = new DOMParser().parseFromString(html, 'text/html');
-    return [...new Set(all(doc, '.mw-parser-output li').filter(el => !el.querySelector('li')).map(el =>
-      normalize(el.textContent.replace(/\[\d+\]/gu, ''))).filter(text => text.length >= 35 && text.length <= 240 &&
-      /(^|[^а-яё])(?:любовь|счастье)(?=$|[^а-яё])/iu.test(text) && !/↑|ISBN|http|править/iu.test(text)))];
-  }
-  async function getQuote(custom) {
-    if (custom) {
-      if (!/(^|[^а-яё])(?:любовь|счастье)(?=$|[^а-яё])/iu.test(custom)) throw new Error('Текст должен содержать «любовь» или «счастье».');
-      return custom;
+    const songs = [];
+    let song;
+    for (const block of all(doc.body, 'h1,h2,h3,h4,h5,h6,p')) {
+      if (/^H[1-6]$/u.test(block.tagName)) {
+        const title = normalize(block.textContent);
+        song = title ? {title, lines: []} : null;
+        if (song) songs.push(song);
+      } else if (song) {
+        const clone = block.cloneNode(true);
+        for (const br of all(clone, 'br')) br.replaceWith(doc.createTextNode('\n'));
+        song.lines.push(clone.textContent.replace(/\u00a0/gu, ' ').trim());
+      }
     }
-    const result = await message({type: 'quote'});
-    const quotes = parseQuotes(result.html);
-    if (!quotes.length) throw new Error('Не удалось получить подходящую цитату из интернета.');
-    return quotes[Math.floor(Math.random() * quotes.length)] + '\n\nИсточник: ' + result.source;
+    return songs.map(({title, lines}) => {
+      const text = lines.join('\n').trim();
+      return {title, text, parts: text.split(/\n[ \t]*\n+/u).map(part => part.trim()).filter(Boolean)};
+    }).filter(song => song.text);
+  }
+  function chooseSongExcerpt(html, random = Math.random) {
+    const songs = parseSongs(html);
+    if (!songs.length) throw new Error('В документе не найдены песни с заголовками и текстом. Проверьте доступ и структуру документа.');
+    const song = songs[Math.floor(random() * songs.length)];
+    const verse = song.parts.length ? song.parts[Math.floor(random() * song.parts.length)] : song.text;
+    return {title: song.title, text: `${verse}\n\nТри слога - ${song.title}`};
+  }
+  function normalizedSongTitle(title) {
+    return normalize(title).toLocaleLowerCase('ru').replace(/ё/gu, 'е')
+      .replace(/(?:альбомная|альбомный|сингловая|сингловый|album|single)\s*(?:версия|version)?/giu, ' ')
+      .replace(/[^а-яa-z0-9]+/gu, ' ').trim().replace(/\s+/gu, ' ');
+  }
+  function songSimilarity(wanted, candidate) {
+    const a = normalizedSongTitle(wanted), b = normalizedSongTitle(candidate);
+    if (!a || !b) return 0;
+    if (a === b) return 1;
+    const left = new Set(a.split(' ')), right = new Set(b.split(' '));
+    const common = [...left].filter(word => right.has(word)).length;
+    const overlap = common / Math.max(left.size, right.size);
+    if (overlap >= 0.6) return overlap * 0.95;
+    const row = Array.from({length: b.length + 1}, (_, i) => i);
+    for (let i = 1; i <= a.length; i++) {
+      let diagonal = row[0]; row[0] = i;
+      for (let j = 1; j <= b.length; j++) {
+        const previous = row[j];
+        row[j] = Math.min(row[j] + 1, row[j - 1] + 1, diagonal + (a[i - 1] === b[j - 1] ? 0 : 1));
+        diagonal = previous;
+      }
+    }
+    const similarity = 1 - row[b.length] / Math.max(a.length, b.length);
+    return similarity >= 0.75 ? similarity * 0.9 : 0;
+  }
+  function matchingCommunityAudio(audios, title) {
+    let best = null, bestScore = 0;
+    for (const audio of audios) {
+      const score = songSimilarity(title, audio.title);
+      if (score > bestScore) { best = audio; bestScore = score; }
+    }
+    return best;
+  }
+  async function preparePostText() {
+    state.songTitle = null;
+    const result = await message({type: 'lyrics'});
+    const prepared = chooseSongExcerpt(result.html);
+    state.songTitle = prepared.title;
+    return prepared.text;
   }
   function diagnostics(error = '') {
     const scope = currentComposerRoot() || document;
-    return {version: '0.3.2', time: new Date().toISOString(), stage: state.stage, error,
+    return {version: '0.4.0', time: new Date().toISOString(), stage: state.stage, error,
       page: location.origin + location.pathname + location.hash,
       photo: state.photo?.id, audio: state.audio?.id, sourceAudio: state.sourceAudio,
+      songTitle: state.songTitle,
       composerConnected: !!state.composer?.root?.isConnected,
       liveComposerFound: !!currentComposerRoot(), photoUpload: state.photoUpload,
       communityContext: state.communityContext, photoAttached: state.photoAttached, audioSelectionVerified: state.audioSelectionVerified,
@@ -505,6 +559,7 @@
     state.scheduleRunId = options.scheduleRunId || null;
     state.photoAttached = false; state.audioSelectionVerified = null; state.communityContext = false;
     state.sourceAudio = null;
+    state.songTitle = null;
     state.photoUpload = null;
     const oldPanel = document.getElementById('tri-sloga-extension-panel');
     if (oldPanel) oldPanel.style.display = 'none';
@@ -517,8 +572,8 @@
         throw new Error('Войдите в VK в этой вкладке, затем нажмите «Исправлено — повторить».');
       }
       if (composerCandidates().length) throw new Error('Уже открыт черновик. Завершите или закройте его перед запуском.');
-      state.stage = 'quote'; const text = await getQuote(options.quote);
-      log('Цитата получена.');
+      state.stage = 'song text'; const text = await preparePostText();
+      log(state.songTitle ? `Текст подготовлен: ${state.songTitle}.` : 'Текст подготовлен.');
       await collectMedia();
       state.stage = 'open composer';
       const composer = await openComposer({unattended: !!options.scheduleRunId}); setText(composer.editor, text);
@@ -554,7 +609,8 @@
     }
   }
 
-  globalThis.TriSloga = {run, photoCandidates, audioCandidates, composerCandidates, parseQuotes, state, openComposer,
+  globalThis.TriSloga = {run, photoCandidates, audioCandidates, composerCandidates, parseSongs, chooseSongExcerpt,
+    songSimilarity, matchingCommunityAudio, state, openComposer,
     creationMenuItems, musicPicker, matchesAudio, attachAudio, attachPhoto, currentComposerRoot, audioAttachments, photoAttachments, authorVerified};
   chrome.runtime.onMessage.addListener((options, sender, reply) => {
     if (sender.id !== chrome.runtime.id) return;

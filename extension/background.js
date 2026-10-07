@@ -1,5 +1,5 @@
 const COMMUNITY_PATH = '/tri_sloga_band';
-const QUOTE_SOURCE = 'https://ru.wikiquote.org/wiki/Любовь';
+const LYRICS_SOURCE = 'https://docs.google.com/document/d/1P-uauTVZ_u8GkYct3f7UN__g6pTFS8y-/export?format=html';
 if (typeof importScripts === 'function') importScripts('scheduler.js');
 let jobQueue = Promise.resolve();
 
@@ -114,10 +114,10 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
       if (!fromVK) throw new Error('Публикация доступна только из VK.');
       return jobCommand(message, sender);
     }
-    if (message.type === 'quote') {
+    if (message.type === 'lyrics') {
       if (!fromVK) throw new Error('Запрос должен поступить из вкладки VK.');
-      const result = await fetchLimited(QUOTE_SOURCE, 2_000_000);
-      return {html: new TextDecoder().decode(result.data), source: QUOTE_SOURCE};
+      const result = await fetchLimited(LYRICS_SOURCE, 2_000_000);
+      return {html: new TextDecoder().decode(result.data)};
     }
     if (message.type === 'album') {
       if (!fromVK) throw new Error('Запрос альбома должен поступить из VK.');

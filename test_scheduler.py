@@ -56,7 +56,7 @@ class SchedulerTests(unittest.TestCase):
         starts = [c for c in calls if c['type'] == 'start']
         self.assertEqual(len(starts), 1)
         self.assertTrue(starts[0]['automatic'])
-        self.assertEqual(starts[0]['quote'], '')
+        self.assertNotIn('quote', starts[0])
         self.assertEqual(starts[0]['id'], 7)
         self.assertFalse(any(c['type'] == 'create' for c in calls))
         remaining = self.page.evaluate('alarms[SCHEDULE_ALARM].when-Date.now()')

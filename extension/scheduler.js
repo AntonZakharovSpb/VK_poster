@@ -137,7 +137,7 @@ async function launchScheduledRun(generation, {retry = false, confirmNoPost = fa
     await serializedSchedule(async () => {
       const {schedule, scheduleRun} = await chrome.storage.local.get(['schedule', 'scheduleRun']);
       if (!schedule?.enabled || schedule.generation !== run.generation || scheduleRun?.id !== run.id) return;
-      const reply = await chrome.tabs.sendMessage(tab.id, {type: 'start', automatic: true, quote: '', scheduleRunId: run.id});
+      const reply = await chrome.tabs.sendMessage(tab.id, {type: 'start', automatic: true, scheduleRunId: run.id});
       if (!reply?.ok) throw new Error(reply?.error || 'Не удалось запустить публикацию.');
     });
   } catch (error) { await finishScheduledRun(run.id, {success: false, error: error.message, loading}); }

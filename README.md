@@ -2,7 +2,9 @@
 
 Editable Chrome extension for https://vk.ru/tri_sloga_band, with an earlier Windows desktop prototype included in `app.py`.
 
-The extension uses your existing Chrome VK login, chooses a random loaded community photo and song, and adds a Russian quote from Wikiquote containing «любовь» or «счастье». Choose an interval in hours and enable automatic publication: the first post starts immediately, then subsequent attempts follow the saved schedule.
+The extension uses your existing Chrome VK login. First it reads the [song document](https://docs.google.com/document/d/1P-uauTVZ_u8GkYct3f7UN__g6pTFS8y-/edit), selects a random song heading and a random verse separated by empty lines (or the complete lyrics if there is only one section), and adds `Три слога - <song name>` beneath it. It then chooses a random loaded community photo and the closest matching community track; if no similar title is available, it chooses a random community track. Choose an interval in hours and enable automatic publication: the first post starts immediately, then subsequent attempts follow the saved schedule.
+
+The document must remain accessible through its shared HTML export. Use headings for song titles and empty paragraphs between verses; changes to the document are fetched for each post. A document/network/parsing failure uses the existing error pause and Fixed/retry workflow. No love/happiness keyword filter or Wikiquote fetch remains in the extension. The older desktop prototype still uses its original quote logic.
 
 ## Install
 
@@ -31,7 +33,7 @@ search is repeated without the version suffix. Final attachment verification
 uses the actual selected track, which may differ from the requested version.
 
 - `extension/content.js`: VK interface automation and attachment checks.
-- `extension/background.js`: quote fetching, media downloads, temporary album tabs, and publication protection.
+- `extension/background.js`: document fetching, media downloads, temporary album tabs, and publication protection.
 - `extension/scheduler.js`: scheduling, community tab loading, notifications, and interrupted-job detection.
 - `extension/popup.js`, `popup.html`, `popup.css`: controls and preferences.
 

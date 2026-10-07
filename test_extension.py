@@ -53,17 +53,31 @@ class ExtensionTests(unittest.TestCase):
         result = self.page.evaluate('TriSloga.photoCandidates()')
         self.assertEqual([p['id'] for p in result], ['-220995299_123'])
 
-    def test_quote_filter_checks_whole_words_and_deduplicates(self):
+    def test_document_song_headings_and_blank_line_verses(self):
         self.content('<div></div>')
-        html = '''<div class="mw-parser-output"><ul>
-          <li>Любовь наполняет нашу жизнь теплом и светом каждый день.</li>
-          <li>Любовь наполняет нашу жизнь теплом и светом каждый день.</li>
-          <li>Много счастья и радости приносит нам прекрасная весна.</li>
-          <li>Счастье приходит, когда мы учимся любить и беречь друг друга.</li>
-        </ul></div>'''
-        result = self.page.evaluate('(html)=>TriSloga.parseQuotes(html)', html)
+        html = '<p>Ignore preface</p><h1>Первая песня</h1><p>Строка 1</p><p>Строка 2</p><p>&nbsp;</p><p>Другой куплет<br>Ещё строка</p><h1>Вторая песня</h1><p>Весь текст без пустых строк</p><h1>Пустая</h1>'
+        result = self.page.evaluate('(html)=>TriSloga.parseSongs(html)', html)
         self.assertEqual(len(result), 2)
-        self.assertFalse(any('счастья' in text for text in result))
+        self.assertEqual(result[0]['parts'], ['Строка 1\nСтрока 2','Другой куплет\nЕщё строка'])
+        first=self.page.evaluate('(html)=>TriSloga.chooseSongExcerpt(html,()=>0)',html)
+        self.assertEqual(first, {'title':'Первая песня','text':'Строка 1\nСтрока 2\n\nТри слога - Первая песня'})
+        second=self.page.evaluate('(html)=>TriSloga.chooseSongExcerpt(html,()=>0.99)',html)
+        self.assertEqual(second['text'],'Весь текст без пустых строк\n\nТри слога - Вторая песня')
+
+    def test_song_matching_handles_versions_typos_and_unrelated_tracks(self):
+        self.content('<div></div>')
+        result=self.page.evaluate('''()=>{
+          const audios=[{id:'1',title:'Другая песня'},{id:'2',title:'Много зла альбомная версия'}];
+          return [TriSloga.matchingCommunityAudio(audios,'Много зла!')?.id,
+            TriSloga.matchingCommunityAudio(audios,'Совершенно иной заголовок'),
+            TriSloga.songSimilarity('Заснежье','Заснежие')>0];
+        }''')
+        self.assertEqual(result,['2',None,True])
+
+    def test_document_without_song_headings_stops_instead_of_posting_login_page(self):
+        self.content('<div></div>')
+        result=self.page.evaluate('''()=>{try{TriSloga.chooseSongExcerpt('<p>Sign in</p>');return false}catch{return true}}''')
+        self.assertTrue(result)
 
     def test_comment_box_is_not_a_post_editor(self):
         self.content('''
@@ -400,7 +414,7 @@ class ExtensionTests(unittest.TestCase):
             <button onclick="document.getElementById('picker').hidden=false"><span style="position:absolute;left:-10000px">Музыка</span></button>
             <button data-testid="posting_base_screen_next" onclick="window.nextCount=(window.nextCount||0)+1;document.getElementById('publish').hidden=false;
               document.querySelector('.page_preview_photo').outerHTML='<div data-testid=posting_preview_attachment_item><img width=100 height=100 src=https://sun1.vkuserphoto.ru/uploaded.jpg></div>';this.remove()">Далее</button>
-            <button id="publish" data-testid="posting_submit_button" hidden onclick="window.publishCount=(window.publishCount||0)+1;document.getElementById('post').textContent=this.parentElement.querySelector('[contenteditable]').textContent;this.parentElement.hidden=true">Опубликовать</button>
+            <button id="publish" data-testid="posting_submit_button" hidden onclick="window.publishCount=(window.publishCount||0)+1;document.getElementById('post').textContent=this.parentElement.querySelector('[contenteditable]').innerText;this.parentElement.hidden=true">Опубликовать</button>
           </div>
           <div id="picker" role="dialog" hidden>
             <div data-audio-id="-220995299_456"><button onclick="document.getElementById('editor').insertAdjacentHTML('beforeend',
@@ -411,11 +425,14 @@ class ExtensionTests(unittest.TestCase):
         self.page.evaluate('''() => {window.sentMessages=[];chrome.runtime.sendMessage=async msg=>{
           sentMessages.push(msg);
           if(msg.type==='claim') return {ok:true,jobId:'fixture'};
+          if(msg.type==='lyrics') return {ok:true,html:'<h1>Song</h1><p>Первая строка песни.</p><p>Вторая строка песни.</p>'};
           if(msg.type==='image') return {ok:true,base64:btoa('fake fixture bytes'),mime:'image/jpeg'};
           return {ok:true};
         }}''')
-        self.page.evaluate('''async()=>{await TriSloga.run({automatic:true,quote:'Любовь наполняет нашу жизнь светом.',scheduleRunId:'scheduled-fixture'})}''')
+        self.page.evaluate('''async()=>{await TriSloga.run({automatic:true,scheduleRunId:'scheduled-fixture'})}''')
         self.assertEqual(self.page.evaluate('window.publishCount'),1)
+        posted=self.page.locator('#post').text_content()
+        self.assertRegex(posted,r'^Первая строка песни\.\nВторая строка песни\.\n{2,3}Три слога - Song$')
         self.assertEqual(self.page.evaluate('window.nextCount'),1)
         self.assertEqual(self.page.get_by_role('textbox',name='Написать комментарий').inner_text(),'untouched comment')
         logs=self.page.evaluate('TriSloga.state.logs')

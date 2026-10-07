@@ -1,4 +1,4 @@
-Три Слога — Chrome extension 0.3.2
+Три Слога — Chrome extension 0.4.0
 
 INSTALL ONCE
 1. In your NORMAL Chrome window, open chrome://extensions
@@ -12,7 +12,7 @@ Log into VK in your normal Chrome profile.
 Open https://vk.ru/tri_sloga_band and click the extension icon.
 Choose the interval in hours (minimum 0.5) and click "Включить".
 The first post starts immediately. Later posts are attempted at that interval.
-Only the interval is configurable: quotes, photos and songs are selected
+Only the interval is configurable: song verses, photos and songs are selected
 automatically, and Publish is clicked after all attachment/author checks pass.
 The extension reuses an existing community tab. If there is no community tab,
 it opens one in the same Chrome profile; other tabs are preserved.
@@ -77,8 +77,16 @@ the first row. If no exact match appears in search, select the first result.
 If the full version title returns nothing, retry without the version suffix.
 The final attachment is checked against the song actually selected, and the
 original requested song is retained in diagnostics when a substitute is used.
-Quote: fetched automatically from Russian Wikiquote, with source credit,
-containing the whole word любовь or счастье.
+Text: fetched from the shared Google song document on each attempt.
+Choose a random song heading, then a random verse separated by empty lines.
+If there are no verse separators, use the whole song. Append a blank line and
+"Три слога - " followed by the chosen song heading. No keyword filter is used.
+The selected heading is matched to loaded community track titles, tolerating
+punctuation, version labels and small spelling differences. If there is no
+similar track, choose a random loaded community song.
+Keep titles formatted as headings and verses separated by empty paragraphs.
+Document URL: https://docs.google.com/document/d/1P-uauTVZ_u8GkYct3f7UN__g6pTFS8y-/edit
+Document access or parsing errors use the same pause-and-retry workflow.
 
 Each scheduled attempt clicks Publish ONCE after checking photo, audio and
 community author. Existing drafts are preserved and cause the attempt to stop.
@@ -102,7 +110,7 @@ access tokens. Keep it private if it contains personal UI labels.
 
 CUSTOMIZE
 All source is in this folder. Edit popup.html/popup.css for the controls,
-content.js for media/editor behavior, background.js for quote/image fetching,
+content.js for song/verse selection and media/editor behavior, background.js for document/image fetching,
 and scheduler.js for the interval, tab loading, and notification behavior.
 After an edit, click Reload on the extension's card in chrome://extensions
 and refresh the VK tab so it uses the new content script.
@@ -112,7 +120,7 @@ by double-clicking a file; the Load unpacked step is required.
 
 PERMISSIONS
 VK: operate in your community tab with your existing login.
-Wikiquote: fetch Russian quotes.
+Google Docs: fetch the shared song document; no Google login is collected.
 VK image hosts: fetch the selected community photo.
 Local extension storage: schedule, status, operation lock and diagnostics.
 Alarms: wake the extension worker for scheduled attempts and the watchdog.
