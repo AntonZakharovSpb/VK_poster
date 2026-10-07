@@ -1,4 +1,4 @@
-Три Слога — Chrome extension 0.3.0
+Три Слога — Chrome extension 0.3.1
 
 INSTALL ONCE
 1. In your NORMAL Chrome window, open chrome://extensions
@@ -68,7 +68,11 @@ This is not a uniform sample of every photo in all albums.
 Photo image: the rendition displayed by VK, downloaded and uploaded into the
 new post. It is not guaranteed to be the original full-resolution photo.
 Audio: match the community audio ID when VK exposes it. In modern music
-pickers without IDs, require a unique matching title, artist and duration.
+pickers without IDs, match title, artist and duration; duplicate matches use
+the first row. If no exact match appears in search, select the first result.
+If the full version title returns nothing, retry without the version suffix.
+The final attachment is checked against the song actually selected, and the
+original requested song is retained in diagnostics when a substitute is used.
 Quote: fetched automatically from Russian Wikiquote, with source credit,
 containing the whole word любовь or счастье.
 

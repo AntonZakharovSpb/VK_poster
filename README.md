@@ -25,6 +25,11 @@ Scheduling uses [Chrome alarms](https://developer.chrome.com/docs/extensions/ref
 
 ## Customize
 
+Music selection prefers the exact track. Duplicate matches use the first row;
+otherwise the first search result is accepted. An empty version-specific
+search is repeated without the version suffix. Final attachment verification
+uses the actual selected track, which may differ from the requested version.
+
 - `extension/content.js`: VK interface automation and attachment checks.
 - `extension/background.js`: quote fetching, media downloads, temporary album tabs, and publication protection.
 - `extension/scheduler.js`: scheduling, community tab loading, notifications, and interrupted-job detection.

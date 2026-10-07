@@ -350,8 +350,18 @@
   function selectedAudioRow(picker) {
     const matches = audioRows(picker).filter(row => matchesAudio(row, state.audio));
     const outer = matches.filter(row => !matches.some(other => other !== row && other.contains(row)));
-    if (outer.length > 1) throw new Error('Несколько песен совпадают с выбранной. Нужна диагностика; случайная замена не выбрана.');
     return outer[0];
+  }
+  function firstSearchAudio(picker) {
+    const rows = audioRows(picker);
+    const outer = rows.filter(row => !rows.some(other => other !== row && other.contains(row)));
+    return outer.find(row => audioMetadata(row).title && audioMetadata(row).artist);
+  }
+  function audioMetadata(row) {
+    return {id: rowAudioId(row),
+      title: normalize(row.querySelector('[data-testid="music-cell-title"],[data-testid="MusicTrackRow_Title"],.audio_row__title_inner')?.textContent),
+      artist: normalize(row.querySelector('[data-testid="music-cell-artists"],[data-testid="MusicTrackRow_Authors"],.audio_row__performer')?.textContent),
+      duration: row.textContent.match(/\b\d{1,3}:\d{2}\b/u)?.[0]};
   }
   function musicPicker() {
     const searches = all(document, '[data-testid="posting_audio_search_audio_input"]').filter(visible);
@@ -373,7 +383,24 @@
       const search = one(all(picker, 'input').filter(el => (el.dataset.testid === 'posting_audio_search_audio_input' || /поиск|найти/iu.test(el.placeholder || el.getAttribute('aria-label') || '')) && visible(el)), 'поиск в выборе музыки');
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(search, `${state.audio.artist} ${state.audio.title}`.trim());
       search.dispatchEvent(new Event('input', {bubbles: true}));
-      row = await until(() => selectedAudioRow(picker), 'выбранная песня сообщества в списке музыки');
+      await delay(1200);
+      try { row = await until(() => selectedAudioRow(picker), 'точная песня в поиске', 3000); }
+      catch (error) {
+        if (state.stopped) throw error;
+        row = firstSearchAudio(picker);
+        if (!row) {
+          const baseTitle = state.audio.title.replace(/\s*[\[(].*?[\])]\s*/gu, ' ')
+            .replace(/\s*(?:[-–—]\s*)?(?:альбомная|альбомный|сингловая|сингловый|album|single)\s*(?:версия|version)?\s*$/iu, '').trim();
+          Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(search, `${state.audio.artist} ${baseTitle}`.trim());
+          search.dispatchEvent(new Event('input', {bubbles: true}));
+          await delay(1200);
+          row = await until(() => selectedAudioRow(picker) || firstSearchAudio(picker), 'результаты поиска песни');
+        }
+        const chosen = audioMetadata(row);
+        state.sourceAudio = {...state.audio};
+        state.audio = {...chosen, id: chosen.id || `search-result:${crypto.randomUUID()}`};
+        log(`Точное совпадение не найдено. Выбрана первая песня из поиска: ${chosen.artist} — ${chosen.title}.`);
+      }
     }
     const selection = row.querySelector('[data-testid="posting_audio_audio_track_selected_icon"],input[type="checkbox"]');
     if (selection) {
@@ -431,9 +458,9 @@
   }
   function diagnostics(error = '') {
     const scope = currentComposerRoot() || document;
-    return {version: '0.3.0', time: new Date().toISOString(), stage: state.stage, error,
+    return {version: '0.3.1', time: new Date().toISOString(), stage: state.stage, error,
       page: location.origin + location.pathname + location.hash,
-      photo: state.photo?.id, audio: state.audio?.id,
+      photo: state.photo?.id, audio: state.audio?.id, sourceAudio: state.sourceAudio,
       communityContext: state.communityContext, photoAttached: state.photoAttached, audioSelectionVerified: state.audioSelectionVerified,
       controls: all(scope, 'button,[role="button"],[role="menuitem"],input,[contenteditable="true"]').filter(visible).slice(0,100).map(el => ({
         tag: el.tagName, role: el.getAttribute('role'), testid: el.dataset.testid,
@@ -454,6 +481,7 @@
     state.running = true; state.stopped = false; state.logs = []; state.composer = null; state.photoPreview = null;
     state.scheduleRunId = options.scheduleRunId || null;
     state.photoAttached = false; state.audioSelectionVerified = null; state.communityContext = false;
+    state.sourceAudio = null;
     const oldPanel = document.getElementById('tri-sloga-extension-panel');
     if (oldPanel) oldPanel.style.display = 'none';
     let jobId, outcome = {success: false, error: 'Публикация не завершена.'};
