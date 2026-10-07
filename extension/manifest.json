@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Три Слога — публикации VK",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Фото сообщества, песня и русская цитата — в вашей обычной вкладке VK.",
   "permissions": ["storage", "scripting", "activeTab", "alarms", "notifications"],
   "host_permissions": [

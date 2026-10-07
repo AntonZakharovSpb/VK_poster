@@ -1,4 +1,4 @@
-Три Слога — Chrome extension 0.3.1
+Три Слога — Chrome extension 0.3.2
 
 INSTALL ONCE
 1. In your NORMAL Chrome window, open chrome://extensions
@@ -67,6 +67,10 @@ tab, a photo is chosen from its loaded items, and the temporary tab is closed.
 This is not a uniform sample of every photo in all albums.
 Photo image: the rendition displayed by VK, downloaded and uploaded into the
 new post. It is not guaranteed to be the original full-resolution photo.
+Photo checks follow a replacement VK editor instead of retaining a detached
+dialog. A disappearing editor or VK upload error stops posting with a clear
+reason. Diagnostics record whether the editor was connected and the upload
+file size/type; the image file itself is not included in the report.
 Audio: match the community audio ID when VK exposes it. In modern music
 pickers without IDs, match title, artist and duration; duplicate matches use
 the first row. If no exact match appears in search, select the first result.

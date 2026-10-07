@@ -200,6 +200,37 @@ class ExtensionTests(unittest.TestCase):
         }''')
         self.assertEqual(result,[0,1,0])
 
+    def photo_upload_fixture(self, change):
+        self.content('''<div id="editor" role="dialog" data-testid="posting_modal_box">
+          <div contenteditable="true"></div><button data-testid="posting_base_screen_next">Далее</button>
+          <input type="file" accept="image/*"></div>''')
+        self.page.evaluate('''change=>{
+          TriSloga.state.photo={id:'-220995299_1',image:'https://sun1.vkuserphoto.ru/photo.jpg'};
+          TriSloga.state.composer={root:document.getElementById('editor'),editor:document.querySelector('[contenteditable]'),modern:true};
+          chrome.runtime.sendMessage=async()=>({ok:true,base64:btoa('fixture image'),mime:'image/jpeg'});
+          document.querySelector('input[type=file]').onchange=new Function(change);
+        }''',change)
+
+    def test_photo_upload_follows_replaced_editor_without_old_modal_testid(self):
+        self.photo_upload_fixture("document.getElementById('editor').outerHTML='<div id=replacement role=dialog><button data-testid=posting_base_screen_next>Далее</button><div class=page_preview_photo>uploaded photo</div></div>'")
+        self.page.evaluate('TriSloga.attachPhoto()')
+        self.assertTrue(self.page.evaluate('TriSloga.state.photoAttached'))
+        self.assertEqual(self.page.evaluate('TriSloga.currentComposerRoot().id'),'replacement')
+        self.assertFalse(self.page.evaluate('TriSloga.state.composer.root.isConnected'))
+        self.assertGreater(self.page.evaluate('TriSloga.state.photoUpload.bytes'),0)
+
+    def test_photo_upload_reports_editor_disappearance(self):
+        self.photo_upload_fixture("document.getElementById('editor').remove()")
+        error=self.page.evaluate('async()=>{try{await TriSloga.attachPhoto();return ""}catch(e){return e.message}}')
+        self.assertIn('Редактор VK исчез',error)
+        self.assertFalse(self.page.evaluate('!!TriSloga.state.photoAttached'))
+
+    def test_photo_upload_reports_vk_error_reason(self):
+        self.photo_upload_fixture("document.getElementById('editor').insertAdjacentHTML('beforeend','<div role=alert>Не удалось загрузить фотографию</div>')")
+        error=self.page.evaluate('async()=>{try{await TriSloga.attachPhoto();return ""}catch(e){return e.message}}')
+        self.assertIn('VK не принял фото: Не удалось загрузить фотографию',error)
+        self.assertFalse(self.page.evaluate('!!TriSloga.state.photoAttached'))
+
     def test_final_photo_preview_requires_recorded_photo_upload(self):
         self.content('''<div id="root"><div data-testid="posting_preview_attachment_item">
           <img width="100" height="100" src="https://sun1.vkuserphoto.ru/selected.jpg"></div></div>''')

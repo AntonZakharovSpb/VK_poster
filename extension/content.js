@@ -241,9 +241,16 @@
   function currentComposerRoot() {
     const modern = all(document, '[data-testid="posting_modal_box"]').find(visible);
     if (modern) return modern;
+    if (state.composer?.modern) {
+      const dialogs = all(document, '[role="dialog"],.box_layout').filter(root => visible(root) &&
+        root.querySelector('[data-testid="posting_base_screen_input_message"],[data-testid="posting_base_screen_next"],[data-testid="posting_preview_attachment_item"]'));
+      const inner = dialogs.filter(root => !dialogs.some(other => other !== root && root.contains(other)));
+      if (inner.length === 1) return inner[0];
+    }
     const editor = state.composer?.editor;
     // Prefer the entire editor dialog over a small text/button container.
-    return editor?.closest('[role="dialog"],.box_layout,#submit_post_box,[data-testid="post-composer"]') || state.composer?.root;
+    const root = editor?.closest('[role="dialog"],.box_layout,#submit_post_box,[data-testid="post-composer"]') || state.composer?.root;
+    return root?.isConnected && visible(root) ? root : null;
   }
   async function attachmentControl(kind) {
     const regex = kind === 'photo' ? /^(Фотография|Фото|Добавить фото|Прикрепить фото)$/u : /^(Музыка|Аудиозапись|Добавить музыку|Прикрепить музыку)$/u;
@@ -267,6 +274,8 @@
     const data = Uint8Array.from(atob(image.base64), char => char.charCodeAt(0));
     const ext = image.mime === 'image/png' ? 'png' : image.mime === 'image/webp' ? 'webp' : 'jpg';
     const file = new File([data], `tri-sloga-${state.photo.id}.${ext}`, {type: image.mime});
+    const liveRoot = currentComposerRoot();
+    if (!liveRoot) throw new Error('Редактор VK закрылся во время загрузки фото. Откройте сообщество и нажмите «Исправлено — повторить».');
     let inputs = all(currentComposerRoot(), 'input[type="file"]').filter(el => /image|\.jpe?g|\.png/iu.test(el.accept));
     if (!inputs.length) {
       await click(await attachmentControl('photo'));
@@ -278,9 +287,21 @@
     if (inputs.length !== 1) throw new Error('Не удалось определить загрузку фото в редакторе. Если VK открыл выбор файла, закройте его; отправьте диагностику.');
     if (state.stopped) throw new Error('Остановлено пользователем.');
     const transfer = new DataTransfer(); transfer.items.add(file); inputs[0].files = transfer.files;
+    state.photoUpload = {time: new Date().toISOString(), bytes: file.size, mime: file.type,
+      inputTestid: inputs[0].dataset.testid || null, dispatched: true};
     inputs[0].dispatchEvent(new Event('change', {bubbles: true}));
+    let missingSince;
     await until(() => {
       const root = currentComposerRoot();
+      if (!root) {
+        missingSince ??= Date.now();
+        if (Date.now() - missingSince > 3000) throw new Error('Редактор VK исчез после передачи фото. Загрузка не подтверждена; пост не отправлен. Откройте сообщество и нажмите «Исправлено — повторить».');
+        return false;
+      }
+      missingSince = null;
+      const uploadError = all(root, '[role="alert"],[data-testid*="error"]').filter(visible)
+        .map(el => normalize(el.textContent)).find(text => /ошиб|не удалось|не поддерж|слишком|превыш/iu.test(text));
+      if (uploadError) throw new Error(`VK не принял фото: ${uploadError}`);
       if (photoAttachments(root).length === 1) return true;
       if (state.composer.modern) {
         const newImages = all(root, 'img').filter(img => visible(img) && (img.currentSrc || img.src) &&
@@ -458,15 +479,17 @@
   }
   function diagnostics(error = '') {
     const scope = currentComposerRoot() || document;
-    return {version: '0.3.1', time: new Date().toISOString(), stage: state.stage, error,
+    return {version: '0.3.2', time: new Date().toISOString(), stage: state.stage, error,
       page: location.origin + location.pathname + location.hash,
       photo: state.photo?.id, audio: state.audio?.id, sourceAudio: state.sourceAudio,
+      composerConnected: !!state.composer?.root?.isConnected,
+      liveComposerFound: !!currentComposerRoot(), photoUpload: state.photoUpload,
       communityContext: state.communityContext, photoAttached: state.photoAttached, audioSelectionVerified: state.audioSelectionVerified,
       controls: all(scope, 'button,[role="button"],[role="menuitem"],input,[contenteditable="true"]').filter(visible).slice(0,100).map(el => ({
         tag: el.tagName, role: el.getAttribute('role'), testid: el.dataset.testid,
         id: el.id, label: label(el).slice(0,90), accept: el.getAttribute('accept')})),
       fileInputs: all(document,'input[type="file"]').map(el=>({id:el.id,testid:el.dataset.testid,accept:el.accept,
-        inComposer:!!state.composer && currentComposerRoot().contains(el)})),
+        inComposer:!!currentComposerRoot()?.contains(el)})),
       menus: all(document,'[role="menu"],[role="dialog"],[data-testid="dropdownactionsheet"]')
         .filter(visible).map(root=>({role:root.getAttribute('role'),testid:root.dataset.testid,
           labels:all(root,'span,button,[role="menuitem"]').filter(visible).map(el=>label(el).slice(0,80)).slice(0,35)})),
@@ -482,6 +505,7 @@
     state.scheduleRunId = options.scheduleRunId || null;
     state.photoAttached = false; state.audioSelectionVerified = null; state.communityContext = false;
     state.sourceAudio = null;
+    state.photoUpload = null;
     const oldPanel = document.getElementById('tri-sloga-extension-panel');
     if (oldPanel) oldPanel.style.display = 'none';
     let jobId, outcome = {success: false, error: 'Публикация не завершена.'};
@@ -531,7 +555,7 @@
   }
 
   globalThis.TriSloga = {run, photoCandidates, audioCandidates, composerCandidates, parseQuotes, state, openComposer,
-    creationMenuItems, musicPicker, matchesAudio, attachAudio, audioAttachments, photoAttachments, authorVerified};
+    creationMenuItems, musicPicker, matchesAudio, attachAudio, attachPhoto, currentComposerRoot, audioAttachments, photoAttachments, authorVerified};
   chrome.runtime.onMessage.addListener((options, sender, reply) => {
     if (sender.id !== chrome.runtime.id) return;
     if (options.type === 'stop') {
