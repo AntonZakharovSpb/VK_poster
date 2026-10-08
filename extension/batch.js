@@ -15,6 +15,39 @@ async function batchTab() {
   const tab = tabs.find(t=>t.active && matches(t)) || tabs.find(matches);
   return tab ? chrome.tabs.update(tab.id,{active:true}) : chrome.tabs.create({url:'https://vk.ru/tri_sloga_band',active:true});
 }
+async function readPendingPage(batch,check={}) {
+  const tab=await chrome.tabs.create({url:'https://vk.ru/wall-220995299?postponed=1',active:false});
+  try {
+    await batchSerial(async()=>{
+      const {batch:current}=await chrome.storage.local.get('batch');
+      if(!current?.enabled || current.id!==batch.id)throw new Error('Партия остановлена.');
+      await chrome.storage.local.set({batch:{...current,inspectionTabId:tab.id}});
+    });
+    const deadline=Date.now()+45000;
+    let ready=false;
+    while(Date.now()<deadline) {
+      if((await chrome.tabs.get(tab.id)).status==='complete') {
+        try {
+          const [probe]=await chrome.scripting.executeScript({target:{tabId:tab.id},func:()=>
+            location.pathname==='/wall-220995299' && new URLSearchParams(location.search).get('postponed')==='1' && !!document.body});
+          if(probe?.result) {ready=true;break;}
+        }catch{}
+      }
+      await new Promise(resolve=>setTimeout(resolve,500));
+    }
+    if(!ready)throw new Error('Страница «Отложенные посты» не загрузилась. Проверьте VK и VPN.');
+    await chrome.scripting.executeScript({target:{tabId:tab.id},files:['content.js']});
+    const response=await chrome.tabs.sendMessage(tab.id,{type:'inspectPending',batch,...check});
+    if(!response?.ok)throw new Error(response?.error||'Не удалось прочитать «Отложенные посты».');
+    return response;
+  } finally {
+    await batchSerial(async()=>{
+      const {batch:current}=await chrome.storage.local.get('batch');
+      if(current?.id===batch.id)await chrome.storage.local.set({batch:{...current,inspectionTabId:null}});
+    });
+    try {await chrome.tabs.remove(tab.id);}catch{}
+  }
+}
 async function batchLaunch(id) {
   try {
     const tab = await batchTab();
@@ -38,10 +71,12 @@ async function batchLaunch(id) {
     }
     if (!loaded) throw new Error('VK не загрузился за 45 секунд. Проверьте соединение и VPN.');
     await chrome.scripting.executeScript({target:{tabId:tab.id},files:['content.js']});
+    const {batch:currentBatch}=await chrome.storage.local.get('batch');
+    const queue=await readPendingPage(currentBatch);
     await batchSerial(async()=>{
       const {batch}=await chrome.storage.local.get('batch');
       if (!batch?.enabled || batch.id!==id) return;
-      const response=await chrome.tabs.sendMessage(tab.id,{type:'batchStart',batch});
+      const response=await chrome.tabs.sendMessage(tab.id,{type:'batchStart',batch:{...batch,queueDate:queue.latest}});
       if (!response?.ok) throw new Error(response?.error || 'Не удалось запустить партию.');
     });
   } catch(error) {
@@ -50,12 +85,18 @@ async function batchLaunch(id) {
       if(batch?.id===id && batch.enabled) {
         await chrome.storage.local.set({batch:{...batch,running:false,needsFix:true,error:error.message}});
         await batchNotify(error.message);
+        if(typeof downloadDiagnostics==='function')await downloadDiagnostics(error.message,id);
       }
     });
   }
 }
 async function batchCommand(message,sender) {
   if(message.type==='batchStatus') return chrome.storage.local.get(['batch','publicationAttempt']);
+  if(message.type==='pendingInspect') {
+    const {batch}=await chrome.storage.local.get('batch');
+    if(!batch?.enabled||batch.id!==message.batchId||batch.tabId!==sender.tab?.id)throw new Error('Устаревший сеанс партии.');
+    return readPendingPage(batch,{text:message.text,date:message.date});
+  }
   if(message.type==='batchStart') {
     const amount=Number(message.amount), intervalSeconds=Number(message.intervalSeconds);
     if(!Number.isInteger(amount)||amount<1||amount>1000) throw new Error('Количество: целое число от 1 до 1000.');
@@ -77,7 +118,7 @@ async function batchCommand(message,sender) {
     let {batch,publicationAttempt}=await chrome.storage.local.get(['batch','publicationAttempt']);
     if(!batch?.enabled) throw new Error('Нет приостановленной партии.');
     if(batch.captcha) {
-      const reply=await chrome.tabs.sendMessage(batch.tabId,{type:'captchaResume',batchId:batch.id});
+      const reply=await chrome.tabs.sendMessage(batch.captchaTabId||batch.tabId,{type:'captchaResume',batchId:batch.id});
       if(!reply?.ok) throw new Error(reply?.error || 'Вкладка с CAPTCHA недоступна.');
     } else {
       if(!batch.needsFix) throw new Error('Партия уже выполняется.');
@@ -102,20 +143,22 @@ async function batchCommand(message,sender) {
     return batchSerial(async()=>{
       const {batch}=await chrome.storage.local.get('batch');
       if(batch?.tabId) { try {await chrome.tabs.sendMessage(batch.tabId,{type:'batchStop',batchId:batch.id});}catch{} }
+      if(batch?.inspectionTabId) {try {await chrome.tabs.sendMessage(batch.inspectionTabId,{type:'batchStop',batchId:batch.id});}catch{}}
       await chrome.storage.local.set({batch:{...batch,enabled:false,running:false,captcha:false,stopped:true}});
       return chrome.storage.local.get('batch');
     });
   }
   return batchSerial(async()=>{
     const {batch,activeJob}=await chrome.storage.local.get(['batch','activeJob']);
-    if(!batch?.enabled||batch.id!==message.batchId||batch.tabId!==sender.tab?.id) throw new Error('Устаревший сеанс партии.');
+    const inspection=sender.tab?.id===batch?.inspectionTabId && ['batchCaptcha','batchHeartbeat'].includes(message.type);
+    if(!batch?.enabled||batch.id!==message.batchId||(!inspection && batch.tabId!==sender.tab?.id)) throw new Error('Устаревший сеанс партии.');
     if(message.type==='batchHeartbeat') {
       if(activeJob?.tabId===batch.tabId) await chrome.storage.local.set({activeJob:{...activeJob,expires:Date.now()+15*60000}});
       return {};
     }
     if(message.type==='batchCaptcha') {
-      await chrome.storage.local.set({batch:{...batch,captcha:message.paused===true,error:message.paused?'Решите CAPTCHA во вкладке VK и нажмите «ОК — продолжить».':''}});
-      if(message.paused) await batchNotify('Решите CAPTCHA во вкладке VK и нажмите «ОК — продолжить».');
+      await chrome.storage.local.set({batch:{...batch,captcha:message.paused===true,captchaTabId:message.paused?sender.tab.id:null,error:message.paused?'Решите CAPTCHA во вкладке VK и нажмите «ОК — продолжить».':''}});
+      if(message.paused) {await chrome.tabs.update(sender.tab.id,{active:true});await batchNotify('Решите CAPTCHA во вкладке VK и нажмите «ОК — продолжить».');}
       else await chrome.action.setBadgeText({text:''});
       return {};
     }
@@ -139,6 +182,7 @@ async function batchInterrupted() {
     await chrome.storage.local.set({batch:{...batch,running:false,captcha:false,needsFix:true,
       error:'Вкладка или браузер были закрыты. Проверьте «Отложенные» перед продолжением партии.'}});
     await chrome.storage.local.remove(['activeJob']);
+    if(typeof downloadDiagnostics==='function')await downloadDiagnostics('Вкладка или браузер были закрыты. Проверьте «Отложенные» перед продолжением партии.',batch.id);
   }
 }
 chrome.runtime.onStartup.addListener(()=>batchInterrupted().catch(console.error));
@@ -153,4 +197,7 @@ chrome.tabs.onUpdated?.addListener((tabId,change)=>{
   if(change.status!=='loading')return;
   chrome.storage.local.get('batch').then(({batch})=>{if(batch?.enabled && batch.tabId===tabId)return batchInterrupted();}).catch(console.error);
 });
-chrome.notifications.onClicked.addListener(id=>{if(id==='tri-sloga-error')batchTab().catch(console.error);});
+chrome.notifications.onClicked.addListener(id=>{
+  if(id==='tri-sloga-error')chrome.storage.local.get('batch').then(({batch})=>batch?.captchaTabId?
+    chrome.tabs.update(batch.captchaTabId,{active:true}):batchTab()).catch(console.error);
+});

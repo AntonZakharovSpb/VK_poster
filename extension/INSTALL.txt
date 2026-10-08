@@ -1,4 +1,4 @@
-Три Слога — Chrome extension 0.5.0
+Три Слога — Chrome extension 0.5.1
 
 INSTALL / UPDATE
 Open chrome://extensions in your normal Chrome profile.
@@ -11,7 +11,8 @@ Click «Запланировать партию». Keep Chrome and the VK commun
 Progress shows how many posts have been confirmed in «Отложенные».
 
 DATE SEQUENCE
-First open «Отложенные» and read the latest scheduled date/time, loading more
+Read https://vk.ru/wall-220995299?postponed=1 in a temporary tab using your
+VK login, then close it. Read dates from post headers, loading more
 posts where necessary. Schedule the first new post one day later, preserving
 the time, then one post per following day. If there are explicitly no queued
 posts, start tomorrow at the current Moscow time. Dates use Europe/Moscow.
@@ -38,7 +39,8 @@ Errors show their reason and enable «Исправлено — повторит�
 An uncertain submission requires checking «Отложенные» before retrying.
 Closing the browser or VK tab pauses the batch and retains progress.
 Resume manually after checking VK. Do not close Chrome during normal work.
-Use «Скачать диагностику» if VK uses unsupported date controls or date labels.
+Errors automatically download diagnostics/logs as tri-sloga-diagnostic.json
+to your Chrome download folder. No button is needed.
 The date picker currently supports date/time text inputs and datetime-local;
 calendar-only interfaces may need calibration from your diagnostics.
 

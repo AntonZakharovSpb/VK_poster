@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "Три Слога — публикации VK",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Партия отложенных постов Три слога: фото сообщества, песня и куплет из документа.",
-  "permissions": ["storage", "scripting", "activeTab", "alarms", "notifications"],
+  "permissions": ["storage", "scripting", "activeTab", "alarms", "notifications", "downloads"],
   "host_permissions": [
     "https://vk.ru/*", "https://vk.com/*",
     "https://docs.google.com/document/d/1P-uauTVZ_u8GkYct3f7UN__g6pTFS8y-/*"

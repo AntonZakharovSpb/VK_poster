@@ -1,6 +1,6 @@
 # Три Слога — VK publisher
 
-Chrome extension for https://vk.ru/tri_sloga_band. Version 0.5.0 creates a finite batch of scheduled posts instead of publishing periodically.
+Chrome extension for https://vk.ru/tri_sloga_band. Version 0.5.1 creates a finite batch of scheduled posts instead of publishing periodically.
 
 ## Use
 
@@ -8,7 +8,7 @@ Chrome extension for https://vk.ru/tri_sloga_band. Version 0.5.0 creates a finit
 2. Choose **Amount** (number of posts) and **Interval** (seconds to wait between creating posts).
 3. Click **Запланировать партию**. Keep Chrome and the VK tab open until it finishes.
 
-The extension opens **Отложенные**, loads the list and finds the latest scheduled date. The first new post is scheduled one day later, preserving the time of day. Each subsequent post is scheduled on the next day. If the queue is explicitly empty, the first post is scheduled tomorrow at the current Moscow time. Dates are handled in Europe/Moscow, including month/year rollover.
+The extension reads **Отложенные посты** at `https://vk.ru/wall-220995299?postponed=1` in a temporary tab using the existing VK login. It loads the list, reads dates from post headers and closes that tab, leaving the community editor open. The first new post is scheduled one day later, preserving the time of day. Each subsequent post is scheduled on the next day. If the queue is explicitly empty, the first post is scheduled tomorrow at the current Moscow time. Dates use Europe/Moscow, including month/year rollover.
 
 It reads the shared [song document](https://docs.google.com/document/d/1P-uauTVZ_u8GkYct3f7UN__g6pTFS8y-/edit), chooses a random song and a random verse, and appends `Три слога - <song title>`. Photos are selected natively in **Выбрать из ВКонтакте → Фото VK**, scrolling the community grid to load more. No thumbnail download/upload or album tabs are used.
 
@@ -20,9 +20,9 @@ The final action uses **Запланировать**, verifies the date/time inp
 
 A visible CAPTCHA pauses actions and shows a notification and **ОК — продолжить** in the extension. Solve the challenge yourself in VK, then click that button. Closing the challenge alone does not resume actions. CAPTCHA waiting does not consume ordinary interface timeouts. **Остановить** cancels the remaining batch.
 
-Errors pause the batch with diagnostics and **Исправлено — повторить**. If a submission is uncertain, check **Отложенные** before authorizing a new attempt. Closing/restarting the browser or closing the VK tab pauses an unfinished batch; progress is retained. Resume manually after checking VK. This version disables the previous hourly schedule.
+Errors pause the batch with **Исправлено — повторить** and automatically download `tri-sloga-diagnostic.json` to Chrome's download folder. Chrome adds a number if the filename exists. No diagnostics button is required. If a submission is uncertain, check **Отложенные** before authorizing a new attempt. Closing/restarting the browser or closing the VK tab pauses an unfinished batch; progress is retained. Resume manually after checking VK. This version disables the previous hourly schedule.
 
-VK controls vary by account and interface version. Unsupported date-picker controls or unreadable scheduled dates stop the batch and produce diagnostics rather than choosing an unverified date. The current selectors require date/time input fields; live account calibration may be needed for a calendar-only picker. Download diagnostics from the popup if it stops.
+VK controls vary by account and interface version. Unsupported date-picker controls or unreadable scheduled dates stop the batch and automatically download diagnostics rather than choosing an unverified date. The current selectors require date/time input fields; live account calibration may be needed for a calendar-only picker.
 
 ## Project
 
@@ -30,7 +30,7 @@ VK controls vary by account and interface version. Unsupported date-picker contr
 - `extension/batch.js`: batch settings, tab dispatch, saved progress and notifications.
 - `extension/background.js`: document fetching and submission guards.
 - `extension/popup.*`: Amount, Interval, progress and recovery controls.
-- `extension/scheduler.js`: previous hourly scheduler retained for reference, not loaded by 0.5.0.
+- `extension/scheduler.js`: previous hourly scheduler retained for reference, not loaded by the batch version.
 - `app.py`: earlier desktop prototype, not the active extension.
 
 All automated tests use offline browser fixtures and never publish or schedule real VK posts. Run `python -m unittest discover -v`.

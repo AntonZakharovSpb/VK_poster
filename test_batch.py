@@ -36,6 +36,21 @@ class BatchPageTests(unittest.TestCase):
         });}''')
         self.assertEqual(self.page.evaluate('TriSloga.latestPendingDate()'),1792076400000)
 
+    def test_real_pending_wall_header_reads_timestamp_after_author(self):
+        self.content('''<h2>Отложенные посты 2</h2><div class=wall_posts>
+          <div id=post-220995299_1><div class=post_header><a>Три Слога</a><span class=post_date>8 окт 2026 в 22:39</span></div><p>test.</p><button>Опубликовать сейчас</button></div>
+          <div id=post-220995299_2><div class=post_header><a>Три Слога</a><span class=post_date>7 окт 2026 в 22:39</span></div><p>Later in list</p></div></div>''')
+        self.page.evaluate("history.replaceState(null,'','/wall-220995299?postponed=1')")
+        self.assertEqual(self.page.evaluate('TriSloga.latestPendingDate()'),1791488340000)
+        self.assertEqual(self.page.evaluate('TriSloga.scheduledPosts(document).length'),2)
+
+    def test_inspection_message_reads_queue_and_checks_requested_post(self):
+        self.content('''<div id=post-220995299_1><div class=post_header>Три Слога<span>8 окт 2026 в 22:39</span></div><p>test.</p></div>''')
+        self.page.evaluate("history.replaceState(null,'','/wall-220995299?postponed=1')")
+        response=self.page.evaluate('''()=>new Promise(resolve=>testListeners[0]({type:'inspectPending',batch:{id:'fixture'},text:'test.',date:1791488340000},{id:'test-extension'},resolve))''')
+        self.assertTrue(response['ok'])
+        self.assertTrue(response['found'])
+
     def test_empty_queue_is_explicit_and_unreadable_queue_stops(self):
         self.content('<button>Отложенные</button><div data-testid=scheduled-posts>Нет отложенных записей</div>')
         self.assertIsNone(self.page.evaluate('TriSloga.latestPendingDate()'))
@@ -152,6 +167,34 @@ class BatchBackgroundTests(unittest.TestCase):
         self.page.evaluate("batchCommand({type:'batchProgress',batchId:store.batch.id,completed:3,lastDate:1798903800000},{tab:{id:7}})")
         self.assertTrue(self.page.evaluate('store.batch.done'))
         self.assertFalse(self.page.evaluate('store.batch.enabled'))
+
+    def test_queue_inspection_uses_separate_tab_and_passes_latest_date(self):
+        self.page.evaluate('''()=>{
+          chrome.tabs.remove=async id=>calls.push({type:'remove',id});
+          const send=chrome.tabs.sendMessage;
+          chrome.tabs.sendMessage=async(id,msg)=>{
+            if(msg.type==='inspectPending'){calls.push({id,...msg});return {ok:true,latest:1791488340000};}
+            return send(id,msg);
+          };
+        }''')
+        self.start()
+        self.assertEqual(self.page.evaluate('calls.find(c=>c.type==="create").url'),'https://vk.ru/wall-220995299?postponed=1')
+        self.assertEqual(self.page.evaluate('calls.find(c=>c.type==="batchStart").batch.queueDate'),1791488340000)
+        self.assertEqual(self.page.evaluate('calls.find(c=>c.type==="remove").id'),8)
+
+    def test_automatic_error_download_is_json_and_deduplicates_one_error(self):
+        self.page.evaluate('''()=>{
+          chrome.runtime.onMessage={addListener:()=>{}};
+          chrome.downloads={download:async options=>{calls.push({type:'download',...options});return 1;}};
+        }''')
+        self.page.add_script_tag(path=str(EXT/'background.js'))
+        self.page.evaluate("store.lastDiagnostic={logs:['failure'],stage:'read scheduled posts'};downloadDiagnostics('Failed','b')")
+        self.page.evaluate("downloadDiagnostics('Failed','b')")
+        self.assertEqual(self.page.evaluate('calls.filter(c=>c.type==="download").length'),1)
+        data=self.page.evaluate("JSON.parse(decodeURIComponent(calls.find(c=>c.type==='download').url.split(',').slice(1).join(',')))")
+        self.assertEqual(data['error'],'Failed')
+        self.assertEqual(data['lastDiagnostic']['logs'],['failure'])
+        self.assertFalse(self.page.evaluate('calls.find(c=>c.type==="download").saveAs'))
 
     def test_invalid_inputs_and_parallel_start_are_rejected(self):
         error=self.page.evaluate("async()=>{try{await batchCommand({type:'batchStart',amount:1.5,intervalSeconds:2},{})}catch(e){return e.message}}")

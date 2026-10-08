@@ -42,10 +42,4 @@ captcha.onclick=async()=>{
   finally{captcha.disabled=false;}
 };
 chrome.storage.onChanged.addListener((changes,area)=>{if(area==='local'&&(changes.batch||changes.publicationAttempt))refresh();});
-document.getElementById('diagnostics').onclick=async()=>{
-  const data=await chrome.storage.local.get(['lastDiagnostic','batch','publicationAttempt']);
-  const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
-  const anchor=document.createElement('a');anchor.href=URL.createObjectURL(blob);
-  anchor.download='tri-sloga-diagnostic.json';anchor.click();setTimeout(()=>URL.revokeObjectURL(anchor.href),1000);
-};
 refresh();

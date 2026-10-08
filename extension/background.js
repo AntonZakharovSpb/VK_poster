@@ -2,6 +2,16 @@ const COMMUNITY_PATH = '/tri_sloga_band';
 const LYRICS_SOURCE = 'https://docs.google.com/document/d/1P-uauTVZ_u8GkYct3f7UN__g6pTFS8y-/export?format=html';
 if (typeof importScripts === 'function') importScripts('batch.js');
 let jobQueue = Promise.resolve();
+async function downloadDiagnostics(error,batchId) {
+  const snapshot=await chrome.storage.local.get(['lastDiagnostic','batch','publicationAttempt','diagnosticDownload']);
+  const key=`${batchId||snapshot.batch?.id||''}:${error}`;
+  if(snapshot.diagnosticDownload?.key===key && Date.now()-snapshot.diagnosticDownload.time<10000)return;
+  if(!chrome.downloads?.download)return;
+  const data={time:new Date().toISOString(),error,batch:snapshot.batch,publicationAttempt:snapshot.publicationAttempt,lastDiagnostic:snapshot.lastDiagnostic};
+  await chrome.downloads.download({url:'data:application/json;charset=utf-8,'+encodeURIComponent(JSON.stringify(data,null,2)),
+    filename:'tri-sloga-diagnostic.json',saveAs:false,conflictAction:'uniquify'});
+  await chrome.storage.local.set({diagnosticDownload:{key,time:Date.now()}});
+}
 
 function jobCommand(message, sender) {
   const task = jobQueue.then(async () => {
@@ -61,10 +71,16 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
   const fromVK = sender.tab && /^https:\/\/(vk\.ru|vk\.com)\//.test(sender.url || sender.tab.url || '');
   if (!fromExtension) return;
   const task = async () => {
+    if(message.type==='pendingInspect') {
+      if(!fromVK)throw new Error('Запрос должен поступить из VK.');
+      return batchCommand(message,sender);
+    }
     if (message.type.startsWith('batch')) {
       if(['batchProgress','batchError','batchCaptcha','batchHeartbeat'].includes(message.type) && !fromVK) throw new Error('Команда должна поступить из VK.');
       if(['batchStart','batchStatus'].includes(message.type) && sender.tab) throw new Error('Используйте настройки расширения.');
-      return batchCommand(message,sender);
+      const result=await batchCommand(message,sender);
+      if(message.type==='batchError')await downloadDiagnostics(String(message.error),message.batchId);
+      return result;
     }
     if (typeof scheduleCommand === 'function' && ['scheduleSet', 'scheduleStop', 'scheduleStatus', 'scheduleResult', 'scheduleRetry'].includes(message.type)) {
       if (message.type === 'scheduleRetry' && sender.tab && !fromVK) throw new Error('Повтор доступен только из VK.');
@@ -84,6 +100,7 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
     if (message.type === 'diagnostic') {
       if (!fromVK) throw new Error('Диагностика доступна только из VK.');
       await chrome.storage.local.set({lastDiagnostic: message.data});
+      if(message.download)await downloadDiagnostics(message.data.error,message.batchId);
       return {};
     }
     throw new Error('Неизвестная команда.');

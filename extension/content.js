@@ -21,6 +21,7 @@
     message({type:'batchCaptcha',batchId:state.batch.id,paused:true}).catch(()=>{});
   }
   async function captchaGate() {
+    if(state.stopped || state.batchStopped) throw new Error('Остановлено пользователем.');
     const started=Date.now();pauseForCaptcha();
     while(state.captchaPaused) {
       if(state.stopped || state.batchStopped) throw new Error('Остановлено пользователем.');
@@ -654,9 +655,12 @@
   }
   function diagnostics(error = '') {
     const scope = currentComposerRoot() || document;
-    return {version: '0.5.0', time: new Date().toISOString(), stage: state.stage, error,
+    return {version: '0.5.1', time: new Date().toISOString(), stage: state.stage, error,
       batch:state.batch ? {id:state.batch.id,amount:state.batch.amount,completed:state.batch.completed,intervalSeconds:state.batch.intervalSeconds} : null,
       plannedAt:state.plannedAt,captchaPaused:!!state.captchaPaused,
+      scheduledPostHeaders:scheduledPosts(document).slice(0,40).map(post=>({id:post.id,
+        header:normalize(post.querySelector('.post_header,[data-testid="post-header"],.post_date')?.textContent||'').slice(0,180),
+        date:pendingPostDate(post)})),
       dateInputs:all(document,'input[type="date"],input[type="time"],input[type="datetime-local"],input[data-testid*="date"],input[data-testid*="time"]').filter(visible)
         .map(el=>({type:el.type,testid:el.dataset.testid,value:el.value,placeholder:el.placeholder})),
       page: location.origin + location.pathname + location.hash,
@@ -726,17 +730,28 @@
       const value=/^\d+$/u.test(raw||'') ? Number(raw)*(raw.length<=10?1000:1) : Date.parse(raw);
       if(Number.isFinite(value)) return value;
     }
-    const labels=all(post,'[data-testid="post_date_block_preview"],.post_date,[data-testid*="schedule-date"]');
+    const labels=all(post,'[data-testid="post_date_block_preview"],.post_date,[data-testid*="schedule-date"],.post_header,[data-testid="post-header"]');
     for(const el of labels) {const value=parsePostDate(el.textContent);if(value!==null)return value;}
     return parsePostDate(post.textContent);
   }
+  function scheduledPosts(root) {
+    const posts=all(root,'[data-testid="post"],.wall_item,[id^="post-220995299_"],[data-post-id^="-220995299_"]').filter(visible);
+    return posts.filter(post=>!posts.some(other=>other!==post && other.contains(post)));
+  }
+  function pendingRoot() {
+    const root=all(document,'[data-testid="scheduled-posts"],#page_wall_posts,[data-testid="feed-items"],.wall_posts,#wall_postponed').find(visible);
+    if(root)return root;
+    if(location.pathname==='/wall-220995299' && new URLSearchParams(location.search).get('postponed')==='1') return document.body;
+    return null;
+  }
   async function openPending() {
+    if(location.pathname==='/wall-220995299' && new URLSearchParams(location.search).get('postponed')==='1') return until(pendingRoot,'список отложенных записей');
     const tab=await until(()=>{
-      const matches=all(document,'button,a,[role="tab"],[role="button"]').filter(el=>visible(el)&&/^Отложенные(?:\s*\(?\d+\)?)?$/u.test(label(el)));
+      const matches=all(document,'button,a,[role="tab"],[role="button"]').filter(el=>visible(el)&&/^Отложенные(?: посты)?(?:\s*\(?\d+\)?)?$/u.test(label(el)));
       return matches.length ? one(matches,'вкладка «Отложенные»') : null;
     },'вкладка «Отложенные»');
     await click(tab);await delay(700);
-    return until(()=>all(document,'[data-testid="scheduled-posts"],#page_wall_posts,[data-testid="feed-items"]').find(visible),'список отложенных записей');
+    return until(pendingRoot,'список отложенных записей');
   }
   async function latestPendingDate() {
     state.stage='read scheduled posts';
@@ -744,13 +759,13 @@
     let latest=null,stable=0,signature='',started=Date.now();
     while(Date.now()-started<45000) {
       started += await captchaGate();
-      const posts=all(root,'[data-testid="post"],.wall_item').filter(visible);
+      const posts=scheduledPosts(root);
       for(const post of posts) {
         const value=pendingPostDate(post);
         if(value===null) throw new Error('Не удалось прочитать дату отложенной записи. Нужна диагностика формата VK.');
         latest=latest===null?value:Math.max(latest,value);
       }
-      if(!posts.length && /нет отложенных|отложенных (?:записей|постов) нет|пока нет|нет записей/iu.test(root.textContent)) return null;
+      if(!posts.length && /нет отложенных|отложенных (?:записей|постов) нет|пока нет|нет записей|отложенные посты\s*0(?:\D|$)/iu.test(root.textContent)) return null;
       const more=control(root,/^(Показать ещё|Показать еще|Ещё|Еще)$/u).filter(visible);
       if(more.length===1) await click(more[0]);
       else {
@@ -760,8 +775,8 @@
         else if(posts.length) posts[posts.length-1].scrollIntoView({block:'end'});
       }
       await delay(700);
-      root=all(document,'[data-testid="scheduled-posts"],#page_wall_posts,[data-testid="feed-items"]').find(visible)||root;
-      const current=`${all(root,'[data-testid="post"],.wall_item').filter(visible).length}:${root.scrollHeight}:${latest}`;
+      root=pendingRoot()||root;
+      const current=`${scheduledPosts(root).length}:${root.scrollHeight}:${latest}`;
       stable=current===signature?stable+1:0;signature=current;
       if(stable>=4 && !more.length) {if(latest===null)throw new Error('Не удалось определить, пуст ли список «Отложенные».');return latest;}
     }
@@ -809,7 +824,7 @@
     const heartbeat=setInterval(()=>message({type:'batchHeartbeat',batchId:batch.id}).catch(()=>{}),30000);
     try {
       await captchaGate();
-      const latest=await latestPendingDate();
+      const latest=Object.hasOwn(batch,'queueDate') ? batch.queueDate : await latestPendingDate();
       let previous=Math.floor(Math.max(latest||0,batch.lastDate||0)/60000)*60000;
       if(!previous) {const p=dateParts(Date.now());previous=moscowDate(+p.year,+p.month,+p.day,+p.hour,+p.minute);}
       for(let completed=batch.completed;completed<batch.amount;completed++) {
@@ -832,7 +847,8 @@
       }
     } catch(error) {
       log('Партия остановлена: '+error.message);panel();
-      try {await message({type:'diagnostic',data:diagnostics(error.message)});await message({type:'batchError',batchId:batch.id,error:error.message});}catch{}
+      try {await message({type:'diagnostic',data:diagnostics(error.message),download:true,batchId:batch.id});}catch{}
+      try {await message({type:'batchError',batchId:batch.id,error:error.message});}catch{}
     } finally {clearInterval(heartbeat);state.batchRunning=false;state.batch=null;state.captchaPaused=false;}
   }
   async function run(options) {
@@ -877,9 +893,14 @@
       try {
         if(options.scheduledAt) {
           await until(()=>!currentComposerRoot(),'закрытие редактора после планирования',20000);
-          const pending=await openPending();
-          await until(()=>all(pending,'[data-testid="post"],.wall_item').find(post=>visible(post) &&
-            post.textContent.includes(text.split('\n')[0]) && pendingPostDate(post)===options.scheduledAt),'новая запись с выбранной датой в «Отложенные»',20000);
+          if(state.batch && Object.hasOwn(state.batch,'queueDate')) {
+            const check=await message({type:'pendingInspect',batchId:state.batch.id,text:text.split('\n')[0],date:options.scheduledAt});
+            if(!check.found) throw new Error('Новая запись с выбранной датой не найдена в «Отложенные».');
+          } else {
+            const pending=await openPending();
+            await until(()=>scheduledPosts(pending).find(post=>post.textContent.includes(text.split('\n')[0]) &&
+              pendingPostDate(post)===options.scheduledAt),'новая запись с выбранной датой в «Отложенные»',20000);
+          }
         } else await until(() => all(document, '[data-testid="post"],.wall_item').find(post =>
           visible(post) && post.textContent.includes(text.split('\n')[0])), 'новая публикация на стене', 20000);
       } catch {
@@ -903,9 +924,24 @@
   globalThis.TriSloga = {run, photoCandidates, audioCandidates, composerCandidates, parseSongs, chooseSongExcerpt,
     songSimilarity, matchingCommunityAudio, state, openComposer,
     creationMenuItems, musicPicker, matchesAudio, attachAudio, attachPhoto, nativePhotoCards, currentComposerRoot, audioAttachments, photoAttachments, authorVerified,
-    parsePostDate,pendingPostDate,latestPendingDate,prepareScheduledSubmission,runBatch,captchaGate,captchaVisible,dateParts};
+    parsePostDate,pendingPostDate,latestPendingDate,prepareScheduledSubmission,runBatch,captchaGate,captchaVisible,dateParts,scheduledPosts};
   chrome.runtime.onMessage.addListener((options, sender, reply) => {
     if (sender.id !== chrome.runtime.id) return;
+    if(options.type==='inspectPending') {
+      if(location.pathname!=='/wall-220995299' || new URLSearchParams(location.search).get('postponed')!=='1') {reply({ok:false,error:'Открыта другая страница отложенных записей.'});return;}
+      state.batch=options.batch;state.stopped=false;state.batchStopped=false;state.captchaPaused=false;
+      const heartbeat=setInterval(()=>message({type:'batchHeartbeat',batchId:options.batch.id}).catch(()=>{}),20000);
+      (async()=>{
+        try {
+          const latest=await latestPendingDate();
+          const found=options.text ? scheduledPosts(document).some(post=>post.textContent.includes(options.text) && pendingPostDate(post)===options.date) : undefined;
+          reply({ok:true,latest,found});
+        } catch(error) {
+          try {await message({type:'diagnostic',data:diagnostics(error.message),download:true,batchId:options.batch.id});}catch{}
+          reply({ok:false,error:error.message});
+        } finally {clearInterval(heartbeat);state.batch=null;}
+      })();return true;
+    }
     if(options.type==='captchaResume') {
       if(options.batchId!==state.batch?.id || !state.captchaPaused) {reply({ok:false,error:'Нет CAPTCHA для продолжения.'});return;}
       if(captchaVisible()) {reply({ok:false,error:'CAPTCHA ещё видна. Сначала решите её во вкладке VK.'});return;}
