@@ -272,6 +272,46 @@ class ExtensionTests(unittest.TestCase):
         self.assertFalse(self.page.evaluate('window.albumOpened'))
         self.assertEqual(self.page.evaluate('TriSloga.state.photoSelectionVerified'),'-220995299_1')
 
+    def test_modern_popup_selects_idless_photo_and_scrolls_past_albums(self):
+        self.native_photo_fixture('')
+        self.page.evaluate('''()=>{
+          TriSloga.state.communityContext=true;
+          const picker=document.getElementById('photoPicker');
+          picker.style.cssText='height:180px;overflow:auto';
+          picker.innerHTML=`<span role=button data-testid=posting_photo_picker_switch_owner>К моим фото</span>
+            <div role=button data-testid=posting_photo_picker_top_albums_item style="height:250px">Album</div>
+            <div data-testid=posting_photo_picker_photos_item style="height:100px">Photo circle</div>
+            <button id=done disabled>Выбрать фотографии</button>`;
+          picker.querySelector('[data-testid=posting_photo_picker_top_albums_item]').onclick=()=>{throw Error('Must skip albums')};
+          const card=picker.querySelector('[data-testid=posting_photo_picker_photos_item]');
+          card.onclick=()=>{card.setAttribute('aria-selected','true');document.getElementById('done').disabled=false};
+          document.getElementById('done').onclick=()=>{
+            if(card.getAttribute('aria-selected')!=='true') throw Error('No selected photo');
+            document.getElementById('editor').insertAdjacentHTML('beforeend','<div class=page_preview_photo data-photo-id=-220995299_123>Native photo</div>');
+            picker.hidden=true;
+          };
+        }''')
+        self.page.evaluate('TriSloga.attachPhoto()')
+        self.assertTrue(self.page.evaluate('TriSloga.state.photoAttached'))
+        self.assertTrue(self.page.evaluate('TriSloga.state.photo.nativeGrid'))
+        self.assertEqual(self.page.evaluate('TriSloga.photoAttachments(TriSloga.currentComposerRoot()).length'),1)
+
+    def test_idless_grid_requires_community_context_and_owner_switch(self):
+        self.content('''<div id=picker><span data-testid=posting_photo_picker_switch_owner>К моим фото</span>
+          <div data-testid=posting_photo_picker_photos_item>Photo</div></div>''')
+        result=self.page.evaluate('''()=>{
+          const root=document.getElementById('picker');
+          const unknown=TriSloga.nativePhotoCards(root).length;
+          TriSloga.state.communityContext=true;
+          const community=TriSloga.nativePhotoCards(root).length;
+          root.querySelector('span').textContent='К фото сообщества';
+          const personal=TriSloga.nativePhotoCards(root).length;
+          root.querySelector('span').textContent='К моим фото';
+          root.querySelector('div').dataset.photoId='12345_1';
+          return [unknown,community,personal,TriSloga.nativePhotoCards(root).length];
+        }''')
+        self.assertEqual(result,[0,1,0,0])
+
     def test_native_photo_refuses_personal_photos_without_upload_fallback(self):
         self.native_photo_fixture('')
         self.page.evaluate('document.querySelector("[data-photo-id]").dataset.photoId="12345_1"')

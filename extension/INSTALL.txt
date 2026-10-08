@@ -1,4 +1,4 @@
-Три Слога — Chrome extension 0.4.2
+Три Слога — Chrome extension 0.4.3
 
 INSTALL ONCE
 1. In your NORMAL Chrome window, open chrome://extensions

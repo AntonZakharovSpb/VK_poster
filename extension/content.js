@@ -267,6 +267,18 @@
       const card = el.closest('[data-photo-id],.photos_choose_row,.photos_choose_photo,.photos_row') || el.closest('button') || el;
       if (!cards.has(id)) cards.set(id, {id, card});
     }
+    // Modern VK cards expose no photo ID. The owner switch points to personal
+    // photos only while the picker currently shows the community's photos.
+    const ownerSwitch = root.querySelector('[data-testid="posting_photo_picker_switch_owner"]');
+    if (state.communityContext && normalize(ownerSwitch?.textContent || '') === 'К моим фото') {
+      all(root, '[data-testid="posting_photo_picker_photos_item"]').forEach((card, index) => {
+        if (!visible(card)) return;
+        const ids = [card, ...all(card, '[data-photo-id],[data-id],a[href*="photo"]')].map(photoId).filter(Boolean);
+        if (ids.length) return; // Explicit IDs must pass the owner check above.
+        const id = `community-grid:${index}`;
+        cards.set(id, {id, card, nativeGrid: true});
+      });
+    }
     return [...cards.values()];
   }
   function nativePhotoPicker() {
@@ -285,7 +297,7 @@
     return candidates.filter(el => !candidates.some(other => other !== el && other.contains(el)))
       .filter(el => {
         const ids = [el, ...all(el, '[data-photo-id],[data-id],a[href*="photo"]')].map(photoId).filter(Boolean);
-        return !ids.length || ids.every(id => id === state.photo.id);
+        return !ids.length || ids.every(id => state.photo.nativeGrid ? id.startsWith(OWNER + '_') : id === state.photo.id);
       });
   }
   async function attachPhoto() {
@@ -312,8 +324,9 @@
       return loaded.length ? loaded : null;
     }, 'фотографии сообщества в общем списке Фото VK');
     const chosen = cards[Math.floor(Math.random() * cards.length)];
-    state.photo = {id: chosen.id, url: `${location.origin}/photo${chosen.id}`};
-    log(`В Фото VK выбрана фотография сообщества ${chosen.id} из ${cards.length} загруженных, без открытия альбомов.`);
+    state.photo = {id: chosen.id, nativeGrid: !!chosen.nativeGrid,
+      url: chosen.nativeGrid ? null : `${location.origin}/photo${chosen.id}`};
+    log(`В Фото VK выбрана фотография сообщества ${chosen.nativeGrid ? 'из общей сетки' : chosen.id} из ${cards.length} загруженных, без открытия альбомов.`);
     const checkbox = chosen.card.querySelector('input[type="checkbox"]');
     const livePicker = nativePhotoPicker();
     if (livePicker && all(livePicker, 'input[type="checkbox"]:checked').some(el => !chosen.card.contains(el))) {
@@ -562,13 +575,17 @@
   }
   function diagnostics(error = '') {
     const scope = currentComposerRoot() || document;
-    return {version: '0.4.2', time: new Date().toISOString(), stage: state.stage, error,
+    return {version: '0.4.3', time: new Date().toISOString(), stage: state.stage, error,
       page: location.origin + location.pathname + location.hash,
       photo: state.photo?.id, audio: state.audio?.id, sourceAudio: state.sourceAudio,
       songTitle: state.songTitle,
       composerConnected: !!state.composer?.root?.isConnected,
       liveComposerFound: !!currentComposerRoot(), photoSelectionVerified: state.photoSelectionVerified,
       sourcePhoto: state.sourcePhoto,
+      photoGrid: all(document, '[data-testid="posting_photo_picker_photos_item"]').filter(visible).slice(0,50)
+        .map(el => ({photoId:photoId(el),selected:el.getAttribute('aria-selected'),
+          checked:el.querySelector('input[type="checkbox"]')?.checked,
+          image:el.querySelector('img')?.getAttribute('src'),testids:all(el,'[data-testid]').map(child=>child.dataset.testid)})),
       photoPickerControls: all(document, '[role="dialog"],.box_layout').filter(visible).map(root => ({
         testid: root.dataset.testid, controls: all(root,'button,[role="button"],a,input').filter(visible).slice(0,50)
           .map(el => ({testid:el.dataset.testid,label:label(el).slice(0,100),photoId:photoId(el),href:el.getAttribute('href')}))})),
