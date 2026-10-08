@@ -8,8 +8,11 @@ async function downloadDiagnostics(error,batchId) {
   if(snapshot.diagnosticDownload?.key===key && Date.now()-snapshot.diagnosticDownload.time<10000)return;
   if(!chrome.downloads?.download)return;
   const data={time:new Date().toISOString(),error,batch:snapshot.batch,publicationAttempt:snapshot.publicationAttempt,lastDiagnostic:snapshot.lastDiagnostic};
+  const parts=Object.fromEntries(new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/Moscow',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'})
+    .formatToParts(new Date()).filter(part=>part.type!=='literal').map(part=>[part.type,part.value]));
+  const filename=`Tri-Sloga-diagnostics-${parts.year}-${parts.month}-${parts.day}_${parts.hour}-${parts.minute}-${parts.second}.json`;
   await chrome.downloads.download({url:'data:application/json;charset=utf-8,'+encodeURIComponent(JSON.stringify(data,null,2)),
-    filename:'tri-sloga-diagnostic.json',saveAs:false,conflictAction:'uniquify'});
+    filename,saveAs:false,conflictAction:'uniquify'});
   await chrome.storage.local.set({diagnosticDownload:{key,time:Date.now()}});
 }
 

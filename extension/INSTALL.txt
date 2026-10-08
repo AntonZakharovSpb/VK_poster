@@ -1,4 +1,4 @@
-Три Слога — Chrome extension 0.5.1
+Три Слога — Chrome extension 0.5.2
 
 INSTALL / UPDATE
 Open chrome://extensions in your normal Chrome profile.
@@ -39,10 +39,10 @@ Errors show their reason and enable «Исправлено — повторит�
 An uncertain submission requires checking «Отложенные» before retrying.
 Closing the browser or VK tab pauses the batch and retains progress.
 Resume manually after checking VK. Do not close Chrome during normal work.
-Errors automatically download diagnostics/logs as tri-sloga-diagnostic.json
+Errors automatically download diagnostics/logs as Tri-Sloga-diagnostics-YYYY-MM-DD_HH-MM-SS.json
 to your Chrome download folder. No button is needed.
-The date picker currently supports date/time text inputs and datetime-local;
-calendar-only interfaces may need calibration from your diagnostics.
+The date picker supports date/time inputs and datetime-local.
+The calendar popup is supported, including month/year navigation and time selection.
 
 TESTING
 Automated tests use simulated offline VK pages only. They never create real

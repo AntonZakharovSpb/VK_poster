@@ -15,6 +15,83 @@ class BatchPageTests(unittest.TestCase):
     content=test_extension.ExtensionTests.content
     workflow_fixture=test_extension.ExtensionTests.workflow_fixture
 
+    def calendar_fixture(self,month=9,year=2026):
+        self.content('''<div id=editor role=dialog data-testid=posting_modal_box>
+          <div contenteditable=true></div><button id=dateButton data-testid=posting_postponed_button>Сегодня в 23:39</button>
+          <button data-testid=posting_postponed_publish_button onclick="window.queueClicks=(window.queueClicks||0)+1">Добавить в очередь</button>
+          </div><div id=calendar role=dialog hidden></div>''')
+        self.page.evaluate('''({month,year})=>{
+          TriSloga.state.composer={root:document.getElementById('editor'),editor:document.querySelector('[contenteditable]'),modern:true};
+          window.viewMonth=month;window.viewYear=year;window.clockHour=23;window.clockMinute=39;window.selectedDate=null;
+          const sync=()=>{
+            if(selectedDate)dateButton.textContent=new Date(selectedDate).toLocaleDateString('ru-RU',{timeZone:'UTC',day:'numeric',month:'long',year:'numeric'})+' в '+String(clockHour).padStart(2,'0')+':'+String(clockMinute).padStart(2,'0');
+          };
+          window.renderCalendar=()=>{
+            calendar.replaceChildren();
+            const heading=document.createElement('div');heading.setAttribute('aria-live','polite');heading.textContent=new Date(Date.UTC(viewYear,viewMonth,1)).toLocaleDateString('ru-RU',{timeZone:'UTC',month:'long',year:'numeric'});calendar.append(heading);
+            const next=document.createElement('button');next.setAttribute('aria-label','Следующий месяц');next.textContent='>';next.onclick=()=>{viewMonth++;if(viewMonth===12){viewMonth=0;viewYear++;}renderCalendar();};calendar.append(next);
+            const previous=document.createElement('button');previous.setAttribute('aria-label','Предыдущий месяц');previous.textContent='<';previous.onclick=()=>{viewMonth--;if(viewMonth<0){viewMonth=11;viewYear--;}renderCalendar();};calendar.append(previous);
+            for(let day=1;day<=new Date(Date.UTC(viewYear,viewMonth+1,0)).getUTCDate();day++){
+              const button=document.createElement('button');button.textContent=String(day);
+              button.setAttribute('aria-label',new Date(Date.UTC(viewYear,viewMonth,day)).toLocaleDateString('ru-RU',{timeZone:'UTC',weekday:'long',day:'numeric',month:'long'}));
+              if(window.disabledDay===day){button.disabled=true;button.setAttribute('aria-disabled','true');}
+              button.onclick=()=>{selectedDate=Date.UTC(viewYear,viewMonth,day);sync();};calendar.append(button);
+            }
+            for(const [count,name] of [[24,'clockHour'],[60,'clockMinute']]){
+              const select=document.createElement('select');select.style.display='none';
+              for(let i=0;i<count;i++){const option=document.createElement('option');option.value=String(i);option.textContent=String(i);select.append(option);}
+              select.value=String(window[name]);select.onchange=()=>{window[name]=Number(select.value);sync();};calendar.append(select);
+            }
+          };
+          dateButton.onclick=()=>{calendar.hidden=!calendar.hidden;if(!calendar.hidden)renderCalendar();};
+        }''',{'month':month,'year':year})
+
+    def test_calendar_matches_diagnostic_and_returns_add_to_queue_button(self):
+        self.calendar_fixture()
+        result=self.page.evaluate('async()=>{const button=await TriSloga.prepareScheduledSubmission(1791574740000);return button.dataset.testid;}')
+        self.assertEqual(result,'posting_postponed_publish_button')
+        self.assertIn('9 октября',self.page.locator('#dateButton').inner_text())
+        self.assertIn('22:39',self.page.locator('#dateButton').inner_text())
+        self.assertIsNone(self.page.evaluate('window.queueClicks'))
+        self.page.locator('[data-testid=posting_postponed_publish_button]').click()
+        self.assertEqual(self.page.evaluate('window.queueClicks'),1)
+
+    def test_calendar_crosses_year_and_preserves_required_time(self):
+        self.calendar_fixture(month=11)
+        self.page.evaluate("TriSloga.prepareScheduledSubmission(Date.parse('2027-01-01T18:30:00+03:00'))")
+        self.assertIn('1 января 2027',self.page.locator('#dateButton').inner_text())
+        self.assertIn('18:30',self.page.locator('#dateButton').inner_text())
+        self.assertIsNone(self.page.evaluate('window.queueClicks'))
+
+    def test_calendar_accepts_hidden_span_labels_and_time_inputs(self):
+        self.calendar_fixture()
+        self.page.evaluate('''()=>{
+          const render=renderCalendar;
+          window.renderCalendar=()=>{
+            render();
+            for(const button of calendar.querySelectorAll('button[aria-label]')){
+              const span=document.createElement('span');span.textContent=button.getAttribute('aria-label');
+              span.style.cssText='position:absolute;width:1px;height:1px;overflow:hidden';
+              button.removeAttribute('aria-label');button.append(span);
+            }
+            for(const [index,select] of [...calendar.querySelectorAll('select')].entries()){
+              const input=document.createElement('input');input.value=select.value;
+              input.oninput=()=>{select.value=input.value;select.dispatchEvent(new Event('change'));};
+              select.replaceWith(input);
+            }
+          };
+        }''')
+        self.page.evaluate("TriSloga.prepareScheduledSubmission(Date.parse('2026-10-09T18:30:00+03:00'))")
+        self.assertIn('18:30',self.page.locator('#dateButton').inner_text())
+        self.assertIsNone(self.page.evaluate('window.queueClicks'))
+
+    def test_disabled_calendar_day_cannot_be_queued(self):
+        self.calendar_fixture()
+        self.page.evaluate('window.disabledDay=9')
+        error=self.page.evaluate('async()=>{try{await TriSloga.prepareScheduledSubmission(1791574740000)}catch(e){return e.message}}')
+        self.assertIn('день публикации',error)
+        self.assertIsNone(self.page.evaluate('window.queueClicks'))
+
     def test_dates_parse_moscow_year_rollover_and_invalid_dates(self):
         self.content('<div>Fixture</div>')
         values=self.page.evaluate('''()=>{
@@ -195,6 +272,7 @@ class BatchBackgroundTests(unittest.TestCase):
         self.assertEqual(data['error'],'Failed')
         self.assertEqual(data['lastDiagnostic']['logs'],['failure'])
         self.assertFalse(self.page.evaluate('calls.find(c=>c.type==="download").saveAs'))
+        self.assertRegex(self.page.evaluate('calls.find(c=>c.type==="download").filename'),r'^Tri-Sloga-diagnostics-\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.json$')
 
     def test_invalid_inputs_and_parallel_start_are_rejected(self):
         error=self.page.evaluate("async()=>{try{await batchCommand({type:'batchStart',amount:1.5,intervalSeconds:2},{})}catch(e){return e.message}}")

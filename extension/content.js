@@ -655,7 +655,7 @@
   }
   function diagnostics(error = '') {
     const scope = currentComposerRoot() || document;
-    return {version: '0.5.1', time: new Date().toISOString(), stage: state.stage, error,
+    return {version: '0.5.2', time: new Date().toISOString(), stage: state.stage, error,
       batch:state.batch ? {id:state.batch.id,amount:state.batch.amount,completed:state.batch.completed,intervalSeconds:state.batch.intervalSeconds} : null,
       plannedAt:state.plannedAt,captchaPaused:!!state.captchaPaused,
       scheduledPostHeaders:scheduledPosts(document).slice(0,40).map(post=>({id:post.id,
@@ -786,15 +786,99 @@
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,value);
     input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}));
   }
+  const CALENDAR_MONTHS=['январь','февраль','март','апрель','май','июнь','июль','август','сентябрь','октябрь','ноябрь','декабрь'];
+  function calendarMonth(root) {
+    const labels=[root.getAttribute('aria-label'),...all(root,'[aria-label],caption,[aria-live],span').filter(visible).flatMap(el=>[el.getAttribute('aria-label'),el.textContent])];
+    for(const text of labels) {
+      const match=normalize(text).toLocaleLowerCase('ru').match(/^(январь|февраль|март|апрель|май|июнь|июль|август|сентябрь|октябрь|ноябрь|декабрь)\s*(\d{4})(?:\s*г\.?)?$/u);
+      if(match)return {year:+match[2],month:CALENDAR_MONTHS.indexOf(match[1])+1};
+    }
+    return null;
+  }
+  function calendarDayCells(root) {
+    const cells=new Map();
+    for(const node of all(root,'[aria-label],span')) {
+      const text=normalize(node.getAttribute('aria-label')||node.textContent);
+      if(!/(?:^|,\s*)\d{1,2}\s+[а-яё]+(?:\s+\d{4})?(?:\s*г\.?)?$/iu.test(text))continue;
+      const cell=node.closest('button,[role="button"],[role="gridcell"],[tabindex]');
+      if(cell && root.contains(cell) && visible(cell))cells.set(cell,text);
+    }
+    return [...cells].map(([cell,text])=>({cell,text}));
+  }
+  function calendarPopup() {
+    const roots=all(document,'[role="dialog"],[role="grid"]').filter(visible)
+      .filter(root=>calendarMonth(root)&&calendarDayCells(root).length);
+    // Retain the dialog rather than a nested day grid, so time controls are included.
+    return roots.find(root=>!roots.some(other=>other!==root && other.contains(root)));
+  }
+  async function selectCalendarDate(timestamp) {
+    const target=dateParts(timestamp),wanted=+target.year*12+(+target.month-1);
+    let calendar=calendarPopup();
+    for(let step=0;step<120;step++) {
+      const view=calendarMonth(calendar);
+      if(!view)throw new Error('Не удалось прочитать месяц и год календаря VK.');
+      const current=view.year*12+(view.month-1);
+      if(current===wanted)break;
+      const direction=current<wanted?/^Следующий месяц/iu:/^Предыдущий месяц/iu;
+      await click(one(control(calendar,direction),'стрелка месяца календаря'));
+      calendar=await until(()=>{const live=calendarPopup(),value=live&&calendarMonth(live);return value && value.year*12+value.month-1!==current ? live : null;},'обновлённый месяц календаря');
+    }
+    const view=calendarMonth(calendar);
+    if(view.year!==+target.year||view.month!==+target.month)throw new Error('Нужная дата слишком далеко от открытого месяца.');
+    const dayPattern=new RegExp(`(?:^|[,\\s])${+target.day}\\s+([а-яё]+)(?:\\s+${target.year})?(?:\\s*г\\.?)?$`,'iu');
+    const monthRoots=['январ','феврал','март','апрел','ма','июн','июл','август','сентябр','октябр','ноябр','декабр'];
+    const days=calendarDayCells(calendar).filter(({cell})=>!cell.disabled&&cell.getAttribute('aria-disabled')!=='true')
+      .filter(({text})=>{const match=text.match(dayPattern);return match&&match[1].toLocaleLowerCase('ru').startsWith(monthRoots[+target.month-1]);}).map(({cell})=>cell);
+    await click(one(days,'день публикации в календаре'));await delay(250);
+    let root=currentComposerRoot();
+    let summary=all(root,'[data-testid="posting_postponed_button"],[data-testid="posting_postponed_cell_title"]').find(visible);
+    const time=`${target.hour}:${target.minute}`;
+    if(!normalize(summary?.textContent).includes(time)) {
+      calendar=calendarPopup();
+      if(!calendar) {await click(one(all(root,'[data-testid="posting_postponed_button"]'),'дата публикации'));calendar=await until(calendarPopup,'календарь времени');}
+      for(const [count,value,name] of [[24,+target.hour,'час'],[60,+target.minute,'минута']]) {
+        const selects=all(calendar,'select').filter(select=>select.options.length===count && [...select.options].every(option=>/^\d{1,2}$/u.test(option.value)));
+        if(selects.length===1) {
+          const select=selects[0],option=[...select.options].find(option=>+option.value===value);
+          Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value').set.call(select,option.value);
+          select.dispatchEvent(new Event('input',{bubbles:true}));select.dispatchEvent(new Event('change',{bubbles:true}));await captchaGate();
+        } else {
+          const inputs=all(calendar,'input').filter(visible).filter(el=>/^\d{1,2}$/u.test(el.value));
+          if(inputs.length===2) {
+            await setField(inputs[count===24?0:1],String(value).padStart(2,'0'));
+            inputs[count===24?0:1].blur();await captchaGate();continue;
+          }
+          const combos=all(calendar,'[role="combobox"]').filter(visible).filter(el=>/^\d{1,2}$/u.test(normalize(el.textContent)));
+          if(combos.length!==2)throw new Error('Не удалось определить часы и минуты календаря VK.');
+          await click(combos[count===24?0:1]);
+          const option=await until(()=>{
+            const choices=all(document,'[role="option"]').filter(visible).filter(el=>+normalize(el.textContent)===value);
+            return choices.length ? one(choices,name+' в списке времени') : null;
+          },name+' в списке времени');await click(option);
+        }
+      }
+      await delay(250);root=currentComposerRoot();
+      summary=all(root,'[data-testid="posting_postponed_button"],[data-testid="posting_postponed_cell_title"]').find(visible);
+    }
+    await until(()=>parsePostDate(summary?.textContent)===timestamp,'выбранная дата и время на кнопке VK');
+    // Close the popover by toggling its own date button, without submitting.
+    if(calendarPopup()) {await click(one(all(root,'[data-testid="posting_postponed_button"]'),'закрытие календаря'));await delay(150);}
+    return one(all(currentComposerRoot(),'[data-testid="posting_postponed_publish_button"]').filter(visible),'кнопка «Добавить в очередь»');
+  }
   async function prepareScheduledSubmission(timestamp) {
     state.stage='schedule date';
     let root=currentComposerRoot();
     const options=control(root,/^(Запланировать|Отложить|Запланировать публикацию)$/u).filter(visible);
-    const schedule=options.length ? one(options,'кнопка планирования') : one(all(root,'button,[role="button"]').filter(el=>visible(el)&&/запланировать|время публикации|дата публикации/iu.test(el.getAttribute('aria-label')||el.getAttribute('title')||'')),'настройка даты публикации');
+    const dateButtons=all(root,'[data-testid="posting_postponed_button"]').filter(visible);
+    const schedule=dateButtons.length ? one(dateButtons,'дата публикации') : options.length ? one(options,'кнопка планирования') : one(all(root,'button,[role="button"]').filter(el=>visible(el)&&/запланировать|время публикации|дата публикации/iu.test(el.getAttribute('aria-label')||el.getAttribute('title')||'')),'настройка даты публикации');
     await click(schedule);
-    const dateRoot=await until(()=>all(document,'[role="dialog"],.box_layout').filter(visible)
+    const dateRoot=await until(()=>calendarPopup() || all(document,'[role="dialog"],.box_layout').filter(visible)
       .filter(el=>el.querySelector('input[type="date"],input[type="datetime-local"],input[placeholder*="дд"],input[placeholder*="ДД"],input[data-testid*="date"]'))
       .find(el=>!all(el,'[role="dialog"],.box_layout').some(inner=>inner.querySelector('input[type="date"],input[type="datetime-local"],input[placeholder*="дд"],input[placeholder*="ДД"],input[data-testid*="date"]'))),'выбор даты отложенной записи');
+    if(calendarPopup()) {
+      const button=await selectCalendarDate(timestamp),p=dateParts(timestamp);
+      log(`Дата публикации: ${p.day}.${p.month}.${p.year} ${p.hour}:${p.minute} (Москва).`);return button;
+    }
     const p=dateParts(timestamp),day=`${p.year}-${p.month}-${p.day}`,time=`${p.hour}:${p.minute}`;
     const expected=[];
     const combined=all(dateRoot,'input[type="datetime-local"]').filter(visible);
