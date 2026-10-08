@@ -160,6 +160,49 @@ class ExtensionTests(unittest.TestCase):
         self.assertTrue(self.page.locator('input[type="checkbox"]').is_checked())
         self.assertIn('Песня сообщества прикреплена',self.page.evaluate('TriSloga.state.logs.at(-1)'))
 
+    def test_document_title_search_attaches_first_result(self):
+        cases = [
+            ('Звезда моих тревожных', [('Три слога', 'Звезда моих тревожных'), ('Три слога', 'Звезда моих тревожных (Live)')]),
+            ('Много зла', [('Три слога', 'Много зла альбомная версия'), ('Три слога', 'Много зла')]),
+            ('Плутон - Гудзон', [('Три слога', 'Плутон-Гудзон')]),
+            ('Заснежье', [('Другой исполнитель', 'Заснежье'), ('Три слога', 'Заснежье')]),
+        ]
+        for title, results in cases:
+            with self.subTest(title=title):
+                self.content('''<div id=editor role=dialog data-testid=posting_modal_box>
+                  <div contenteditable=true></div><button onclick="picker.hidden=false">Музыка</button></div>
+                  <div id=picker role=dialog hidden><input data-testid=posting_audio_search_audio_input placeholder="Поиск музыки">
+                  <div id=rows><div data-audio-id=-220995299_999><span data-testid=music-cell-title>Заснежье</span><span data-testid=music-cell-artists>Три слога</span></div></div>
+                  <button id=done>Готово</button></div>''')
+                self.page.evaluate('''({title,results})=>{
+                  TriSloga.state.songTitle=title;
+                  TriSloga.state.audio={id:'-220995299_999',title:'Заснежье',artist:'Три слога'};
+                  TriSloga.state.composer={root:document.getElementById('editor'),editor:document.querySelector('[contenteditable]'),modern:true};
+                  document.querySelector('[data-testid=posting_audio_search_audio_input]').oninput=e=>{
+                    window.actualQuery=e.target.value;
+                    rows.replaceChildren();
+                    results.forEach(([artist,name],index)=>{
+                      const row=document.createElement('div');row.dataset.audioId=`-220995299_${index+1}`;
+                      row.innerHTML='<span data-testid=music-cell-title></span><span data-testid=music-cell-artists></span><input type=checkbox>';
+                      row.querySelector('[data-testid=music-cell-title]').textContent=name;
+                      row.querySelector('[data-testid=music-cell-artists]').textContent=artist;
+                      rows.append(row);
+                    });
+                  };
+                  document.getElementById('done').onclick=()=>{
+                    const selected=rows.querySelector('input:checked').parentElement;
+                    const preview=document.createElement('div');preview.dataset.testid='posting_audio_select_audio_selected';
+                    preview.append(selected.querySelector('[data-testid=music-cell-title]').cloneNode(true),selected.querySelector('[data-testid=music-cell-artists]').cloneNode(true));
+                    editor.append(preview);picker.hidden=true;
+                  };
+                }''', {'title':title,'results':results})
+                self.page.evaluate('TriSloga.attachAudio()')
+                self.assertEqual(self.page.evaluate('window.actualQuery'),title)
+                self.assertEqual(self.page.evaluate('TriSloga.state.audio.title'),results[0][1])
+                self.assertEqual(self.page.evaluate('TriSloga.state.audio.artist'),results[0][0])
+                self.assertEqual(self.page.evaluate('TriSloga.audioAttachments(TriSloga.currentComposerRoot()).length'),1)
+                self.assertEqual(self.page.locator('input[type=checkbox]:checked').count(),1)
+
     def test_album_version_falls_back_to_first_search_result_and_verifies_attachment(self):
         self.content('''<div id="editor" data-testid="posting_modal_box" role="dialog">
           <div contenteditable="true"></div><button onclick="picker.hidden=false">Музыка</button></div>
@@ -527,7 +570,8 @@ class ExtensionTests(unittest.TestCase):
             <button onclick="if(!this.parentElement.querySelector('input').checked)throw Error('Photo not selected');document.getElementById('editor').insertAdjacentHTML('beforeend','<div class=page_preview_photo data-photo-id=-220995299_123>photo attached</div>');this.parentElement.hidden=true">Выбрать фотографии</button>
           </div>
           <div id="picker" role="dialog" hidden>
-            <div data-audio-id="-220995299_456"><button onclick="document.getElementById('editor').insertAdjacentHTML('beforeend',
+            <input data-testid="posting_audio_search_audio_input" placeholder="Поиск музыки">
+            <div data-audio-id="-220995299_456"><span data-testid="music-cell-title">Song</span><span data-testid="music-cell-artists">Три Слога</span><button onclick="document.getElementById('editor').insertAdjacentHTML('beforeend',
               '<div data-testid=posting_audio_select_audio_selected><span data-testid=posting_audio_select_audio_selected_title>Song</span><span>Три Слога</span><button data-testid=posting_audio_unselect_audio>Удалить</button></div>');document.getElementById('picker').hidden=true">Добавить</button></div>
           </div>
           <article id="post" data-testid="post"></article>

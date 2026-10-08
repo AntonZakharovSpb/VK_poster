@@ -140,10 +140,8 @@
     state.stage = 'community music';
     await section('audios');
     const audios = await until(() => { const items = audioCandidates(); return items.length ? items : null; }, 'песни сообщества');
-    const matching = matchingCommunityAudio(audios, state.songTitle);
-    state.audio = matching || audios[Math.floor(Math.random() * audios.length)];
-    if (state.songTitle && !matching) log('Песня с похожим названием не найдена. Выбираю случайную песню сообщества.');
-    log(`Выбрана песня: ${state.audio.artist} — ${state.audio.title}.`);
+    state.audio = audios[Math.floor(Math.random() * audios.length)];
+    log(`Резервная песня на случай пустого поиска: ${state.audio.artist} — ${state.audio.title}.`);
     await section('wall');
   }
 
@@ -472,7 +470,26 @@
     const picker = musicPicker();
     const community = control(picker, /^Три Слога$/iu).filter(visible);
     if (community.length === 1) await click(community[0]);
-    let row = selectedAudioRow(picker);
+    let row;
+    if (state.songTitle) {
+      const search = one(all(picker, 'input').filter(el => (el.dataset.testid === 'posting_audio_search_audio_input' || /поиск|найти/iu.test(el.placeholder || el.getAttribute('aria-label') || '')) && visible(el)), 'поиск в выборе музыки');
+      log(`Ищу музыку по названию: ${state.songTitle}.`);
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(search, state.songTitle);
+      search.dispatchEvent(new Event('input', {bubbles:true}));
+      await delay(1200);
+      try { row = await until(() => firstSearchAudio(picker), 'результаты поиска по названию песни', 10000); }
+      catch (error) {
+        if (state.stopped) throw error;
+        log('Поиск по названию не дал результатов. Добавляю резервную песню сообщества.');
+      }
+      if (row) {
+        const chosen = audioMetadata(row);
+        state.sourceAudio = {...state.audio};
+        state.audio = {...chosen, id: chosen.id || `search-result:${crypto.randomUUID()}`};
+        log(`Выбрана первая песня из поиска: ${chosen.artist} — ${chosen.title}.`);
+      }
+    }
+    if (!row && !state.songTitle) row = selectedAudioRow(picker);
     if (!row) {
       const search = one(all(picker, 'input').filter(el => (el.dataset.testid === 'posting_audio_search_audio_input' || /поиск|найти/iu.test(el.placeholder || el.getAttribute('aria-label') || '')) && visible(el)), 'поиск в выборе музыки');
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(search, `${state.audio.artist} ${state.audio.title}`.trim());
@@ -603,7 +620,7 @@
   }
   function diagnostics(error = '') {
     const scope = currentComposerRoot() || document;
-    return {version: '0.4.4', time: new Date().toISOString(), stage: state.stage, error,
+    return {version: '0.4.5', time: new Date().toISOString(), stage: state.stage, error,
       page: location.origin + location.pathname + location.hash,
       photo: state.photo?.id, audio: state.audio?.id, sourceAudio: state.sourceAudio,
       songTitle: state.songTitle,

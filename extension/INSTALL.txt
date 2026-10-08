@@ -1,4 +1,4 @@
-Три Слога — Chrome extension 0.4.4
+Три Слога — Chrome extension 0.4.5
 
 INSTALL ONCE
 1. In your NORMAL Chrome window, open chrome://extensions
@@ -78,19 +78,17 @@ the attempt. If VK's picker is unsupported, stop and collect diagnostics
 instead of falling back to a low-resolution upload.
 Photo checks follow a replacement VK editor and report a disappearing
 editor or VK attachment error. Diagnostics include photo-picker controls.
-Audio: match the community audio ID when VK exposes it. In modern music
-pickers without IDs, match title, artist and duration; duplicate matches use
-the first row. If no exact match appears in search, select the first result.
-If the full version title returns nothing, retry without the version suffix.
-The final attachment is checked against the song actually selected, and the
-original requested song is retained in diagnostics when a substitute is used.
+Audio: enter the document song title into the attachment search, without the
+artist, and choose the first result. This accepts the first listed version or
+artist. If the search stays empty, use a random loaded community track.
+Final checks verify the selected track by ID or title, artist and duration.
+Logs show the search title and the actual selected track.
 Text: fetched from the shared Google song document on each attempt.
 Choose a random song heading, then a random verse separated by empty lines.
 If there are no verse separators, use the whole song. Append a blank line and
 "Три слога - " followed by the chosen song heading. No keyword filter is used.
-The selected heading is matched to loaded community track titles, tolerating
-punctuation, version labels and small spelling differences. If there is no
-similar track, choose a random loaded community song.
+The selected heading is searched in the attachment picker, independently of
+the small initial list of community tracks.
 Keep titles formatted as headings and verses separated by empty paragraphs.
 Document URL: https://docs.google.com/document/d/1P-uauTVZ_u8GkYct3f7UN__g6pTFS8y-/edit
 Document access or parsing errors use the same pause-and-retry workflow.
