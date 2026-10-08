@@ -70,7 +70,11 @@ async function batchLaunch(id) {
       await new Promise(resolve=>setTimeout(resolve,500));
     }
     if (!loaded) throw new Error('VK не загрузился за 45 секунд. Проверьте соединение и VPN.');
-    await chrome.scripting.executeScript({target:{tabId:tab.id},files:['content.js']});
+    const [injected]=await chrome.scripting.executeScript({target:{tabId:tab.id},files:['content.js']});
+    await batchSerial(async()=>{
+      const {batch}=await chrome.storage.local.get('batch');
+      if(batch?.enabled && batch.id===id)await chrome.storage.local.set({batch:{...batch,documentId:injected?.documentId||null}});
+    });
     const {batch:currentBatch}=await chrome.storage.local.get('batch');
     const queue=await readPendingPage(currentBatch);
     await batchSerial(async()=>{
@@ -176,14 +180,24 @@ async function batchCommand(message,sender) {
     throw new Error('Неизвестная команда партии.');
   });
 }
-async function batchInterrupted() {
+async function batchInterrupted(expectedId,departedDocumentId) {
+  return batchSerial(async()=>{
+    const {batch}=await chrome.storage.local.get('batch');
+    if(expectedId && batch?.id!==expectedId)return;
+    if(departedDocumentId && batch?.documentId!==departedDocumentId)return;
+    if(batch?.enabled) {
+      await chrome.storage.local.set({batch:{...batch,running:false,captcha:false,needsFix:true,
+        error:'Вкладка или браузер были закрыты. Проверьте «Отложенные» перед продолжением партии.'}});
+      await chrome.storage.local.remove(['activeJob']);
+      if(typeof downloadDiagnostics==='function')await downloadDiagnostics('Вкладка или браузер были закрыты. Проверьте «Отложенные» перед продолжением партии.',batch.id);
+    }
+  });
+}
+async function batchCommitted(details) {
+  if(details.frameId!==0)return;
   const {batch}=await chrome.storage.local.get('batch');
-  if(batch?.enabled) {
-    await chrome.storage.local.set({batch:{...batch,running:false,captcha:false,needsFix:true,
-      error:'Вкладка или браузер были закрыты. Проверьте «Отложенные» перед продолжением партии.'}});
-    await chrome.storage.local.remove(['activeJob']);
-    if(typeof downloadDiagnostics==='function')await downloadDiagnostics('Вкладка или браузер были закрыты. Проверьте «Отложенные» перед продолжением партии.',batch.id);
-  }
+  if(batch?.enabled && batch.tabId===details.tabId && batch.documentId && details.documentId!==batch.documentId)
+    await batchInterrupted(batch.id,batch.documentId);
 }
 chrome.runtime.onStartup.addListener(()=>batchInterrupted().catch(console.error));
 chrome.runtime.onInstalled.addListener(async()=>{
@@ -191,12 +205,11 @@ chrome.runtime.onInstalled.addListener(async()=>{
   await chrome.storage.local.set({schedule:{enabled:false}});await batchInterrupted();
 });
 chrome.tabs.onRemoved?.addListener(tabId=>{
-  chrome.storage.local.get('batch').then(({batch})=>{if(batch?.tabId===tabId)return batchInterrupted();}).catch(console.error);
+  chrome.storage.local.get('batch').then(({batch})=>{if(batch?.tabId===tabId)return batchInterrupted(batch.id);}).catch(console.error);
 });
-chrome.tabs.onUpdated?.addListener((tabId,change)=>{
-  if(change.status!=='loading')return;
-  chrome.storage.local.get('batch').then(({batch})=>{if(batch?.enabled && batch.tabId===tabId)return batchInterrupted();}).catch(console.error);
-});
+// VK changes history and loading status without replacing its document.
+// Only a committed new main-frame document interrupts a live batch.
+chrome.webNavigation?.onCommitted?.addListener(details=>batchCommitted(details).catch(console.error));
 chrome.notifications.onClicked.addListener(id=>{
   if(id==='tri-sloga-error')chrome.storage.local.get('batch').then(({batch})=>batch?.captchaTabId?
     chrome.tabs.update(batch.captchaTabId,{active:true}):batchTab()).catch(console.error);

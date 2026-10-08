@@ -2,6 +2,17 @@ const COMMUNITY_PATH = '/tri_sloga_band';
 const LYRICS_SOURCE = 'https://docs.google.com/document/d/1P-uauTVZ_u8GkYct3f7UN__g6pTFS8y-/export?format=html';
 if (typeof importScripts === 'function') importScripts('batch.js');
 let jobQueue = Promise.resolve();
+// Name only our diagnostic downloads; leave all other downloads untouched.
+chrome.downloads?.onDeterminingFilename?.addListener((item,suggest)=>{
+  if(item.byExtensionId!==chrome.runtime.id || !item.url?.startsWith('data:application/json')) {suggest();return;}
+  try {
+    const data=JSON.parse(decodeURIComponent(item.url.slice(item.url.indexOf(',')+1)));
+    if(/^Tri-Sloga-diagnostics-\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.json$/u.test(data.diagnosticFilename)) {
+      suggest({filename:data.diagnosticFilename,conflictAction:'uniquify'});return;
+    }
+  } catch {}
+  suggest();
+});
 async function downloadDiagnostics(error,batchId) {
   const snapshot=await chrome.storage.local.get(['lastDiagnostic','batch','publicationAttempt','diagnosticDownload']);
   const key=`${batchId||snapshot.batch?.id||''}:${error}`;
@@ -11,6 +22,7 @@ async function downloadDiagnostics(error,batchId) {
   const parts=Object.fromEntries(new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/Moscow',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'})
     .formatToParts(new Date()).filter(part=>part.type!=='literal').map(part=>[part.type,part.value]));
   const filename=`Tri-Sloga-diagnostics-${parts.year}-${parts.month}-${parts.day}_${parts.hour}-${parts.minute}-${parts.second}.json`;
+  data.diagnosticFilename=filename;
   await chrome.downloads.download({url:'data:application/json;charset=utf-8,'+encodeURIComponent(JSON.stringify(data,null,2)),
     filename,saveAs:false,conflictAction:'uniquify'});
   await chrome.storage.local.set({diagnosticDownload:{key,time:Date.now()}});

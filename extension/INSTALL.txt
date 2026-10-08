@@ -1,4 +1,4 @@
-Три Слога — Chrome extension 0.5.2
+Три Слога — Chrome extension 0.5.3
 
 INSTALL / UPDATE
 Open chrome://extensions in your normal Chrome profile.

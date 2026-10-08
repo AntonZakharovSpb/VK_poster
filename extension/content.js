@@ -655,7 +655,7 @@
   }
   function diagnostics(error = '') {
     const scope = currentComposerRoot() || document;
-    return {version: '0.5.2', time: new Date().toISOString(), stage: state.stage, error,
+    return {version: '0.5.3', time: new Date().toISOString(), stage: state.stage, error,
       batch:state.batch ? {id:state.batch.id,amount:state.batch.amount,completed:state.batch.completed,intervalSeconds:state.batch.intervalSeconds} : null,
       plannedAt:state.plannedAt,captchaPaused:!!state.captchaPaused,
       scheduledPostHeaders:scheduledPosts(document).slice(0,40).map(post=>({id:post.id,

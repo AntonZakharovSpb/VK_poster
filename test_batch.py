@@ -228,6 +228,12 @@ class BatchBackgroundTests(unittest.TestCase):
 
     def setUp(self):
         test_scheduler.SchedulerTests.setUp(self)
+        self.page.evaluate('''()=>{
+          chrome.tabs.onUpdated={addListener:fn=>listeners.updated=fn};
+          chrome.webNavigation={onCommitted:{addListener:fn=>listeners.committed=fn}};
+          const execute=chrome.scripting.executeScript;
+          chrome.scripting.executeScript=async opts=>(await execute(opts)).map(row=>({...row,documentId:'original-document'}));
+        }''')
         self.page.add_script_tag(path=str(EXT/'batch.js'))
 
     def start(self,amount=3,interval=2):
@@ -262,7 +268,8 @@ class BatchBackgroundTests(unittest.TestCase):
     def test_automatic_error_download_is_json_and_deduplicates_one_error(self):
         self.page.evaluate('''()=>{
           chrome.runtime.onMessage={addListener:()=>{}};
-          chrome.downloads={download:async options=>{calls.push({type:'download',...options});return 1;}};
+          chrome.runtime.id='fixture-extension';
+          chrome.downloads={onDeterminingFilename:{addListener:fn=>listeners.filename=fn},download:async options=>{calls.push({type:'download',...options});return 1;}};
         }''')
         self.page.add_script_tag(path=str(EXT/'background.js'))
         self.page.evaluate("store.lastDiagnostic={logs:['failure'],stage:'read scheduled posts'};downloadDiagnostics('Failed','b')")
@@ -273,6 +280,46 @@ class BatchBackgroundTests(unittest.TestCase):
         self.assertEqual(data['lastDiagnostic']['logs'],['failure'])
         self.assertFalse(self.page.evaluate('calls.find(c=>c.type==="download").saveAs'))
         self.assertRegex(self.page.evaluate('calls.find(c=>c.type==="download").filename'),r'^Tri-Sloga-diagnostics-\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.json$')
+        suggestion=self.page.evaluate('''()=>{
+          let suggestion;listeners.filename({byExtensionId:chrome.runtime.id,url:calls.find(c=>c.type==='download').url},value=>suggestion=value);return suggestion;
+        }''')
+        self.assertEqual(suggestion['filename'],data['diagnosticFilename'])
+        self.assertEqual(suggestion['conflictAction'],'uniquify')
+        self.assertTrue(self.page.evaluate("()=>{let untouched=false;listeners.filename({byExtensionId:'other',url:'data:application/json,{}'},value=>untouched=value===undefined);return untouched;}"))
+
+    def test_vk_loading_and_same_document_navigation_keep_session_for_final_submit(self):
+        self.start()
+        self.page.evaluate('''()=>{
+          chrome.runtime.onMessage={addListener:()=>{}};
+        }''')
+        self.page.add_script_tag(path=str(EXT/'background.js'))
+        job=self.page.evaluate("jobCommand({type:'claim'},{tab:{id:7},documentId:'original-document'})")
+        self.page.evaluate('''async()=>{
+          if(listeners.updated)await listeners.updated(7,{status:'loading'});
+          await batchCommitted({tabId:7,frameId:0,documentId:'original-document'});
+          await batchCommitted({tabId:7,frameId:2,documentId:'iframe-document'});
+          await batchCommitted({tabId:8,frameId:0,documentId:'inspection-document'});
+        }''')
+        self.assertTrue(self.page.evaluate('store.batch.running'))
+        self.assertFalse(self.page.evaluate('!!store.batch.needsFix'))
+        self.page.evaluate("id=>jobCommand({type:'beginPublish',jobId:id,scheduledAt:1791574740000},{tab:{id:7}})",job['jobId'])
+        self.assertEqual(self.page.evaluate('store.publicationAttempt.status'),'pending')
+
+    def test_real_main_document_reload_pauses_and_clears_lease(self):
+        self.start()
+        self.page.evaluate("store.activeJob={id:'lease'};store.batch.completed=1")
+        self.page.evaluate("batchCommitted({tabId:7,frameId:0,documentId:'new-document'})")
+        self.assertFalse(self.page.evaluate('store.batch.running'))
+        self.assertTrue(self.page.evaluate('store.batch.needsFix'))
+        self.assertEqual(self.page.evaluate('store.batch.completed'),1)
+        self.assertFalse(self.page.evaluate('!!store.activeJob'))
+
+    def test_stale_interruption_cannot_clear_new_batch_or_document(self):
+        self.start()
+        self.page.evaluate("store.activeJob={id:'lease'};batchInterrupted('old-batch','original-document')")
+        self.page.evaluate("batchInterrupted(store.batch.id,'old-document')")
+        self.assertTrue(self.page.evaluate('store.batch.running'))
+        self.assertEqual(self.page.evaluate('store.activeJob.id'),'lease')
 
     def test_invalid_inputs_and_parallel_start_are_rejected(self):
         error=self.page.evaluate("async()=>{try{await batchCommand({type:'batchStart',amount:1.5,intervalSeconds:2},{})}catch(e){return e.message}}")

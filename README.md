@@ -1,6 +1,6 @@
 # Три Слога — VK publisher
 
-Chrome extension for https://vk.ru/tri_sloga_band. Version 0.5.2 creates a finite batch of scheduled posts instead of publishing periodically.
+Chrome extension for https://vk.ru/tri_sloga_band. Version 0.5.3 creates a finite batch of scheduled posts instead of publishing periodically.
 
 ## Use
 
@@ -20,7 +20,7 @@ The final action uses **Запланировать**, verifies the date/time inp
 
 A visible CAPTCHA pauses actions and shows a notification and **ОК — продолжить** in the extension. Solve the challenge yourself in VK, then click that button. Closing the challenge alone does not resume actions. CAPTCHA waiting does not consume ordinary interface timeouts. **Остановить** cancels the remaining batch.
 
-Errors pause the batch with **Исправлено — повторить** and automatically download `Tri-Sloga-diagnostics-YYYY-MM-DD_HH-MM-SS.json` to Chrome's download folder. The filename includes the Moscow date and time. No diagnostics button is required. If a submission is uncertain, check **Отложенные** before authorizing a new attempt. Closing/restarting the browser or closing the VK tab pauses an unfinished batch; progress is retained. Resume manually after checking VK. This version disables the previous hourly schedule.
+Errors pause the batch with **Исправлено — повторить** and automatically download `Tri-Sloga-diagnostics-YYYY-MM-DD_HH-MM-SS.json` to Chrome's download folder. The filename includes the Moscow date and time and is explicitly suggested through the Chrome downloads API. No diagnostics button is required. If a submission is uncertain, check **Отложенные** before authorizing a new attempt. Closing/restarting the browser, closing the VK tab, or replacing its main document pauses an unfinished batch; progress is retained. Loading indicators, VK history changes, and iframe navigation do not end the publication session. Resume manually after checking VK. This version disables the previous hourly schedule.
 
 VK controls vary by account and interface version. The extension supports the calendar popup, navigates months and years, selects the required day and time, and submits using **Добавить в очередь**. Unsupported controls or unreadable dates stop the batch and automatically download diagnostics rather than choosing an unverified date.
 
