@@ -1,4 +1,4 @@
-Три Слога — Chrome extension 0.4.1
+Три Слога — Chrome extension 0.4.2
 
 INSTALL ONCE
 1. In your NORMAL Chrome window, open chrome://extensions
@@ -59,18 +59,16 @@ UPDATING AN EXISTING INSTALLATION
 Click Reload on this extension's card in chrome://extensions, then refresh
 the VK community tab. No reinstallation or new VK login is required.
 
-Photo source: https://vk.ru/tri_sloga_band#section=photos
+Photo source: the post editor's native community photo list.
 Music source: the community's Music tab. Media IDs are checked against the
 community's owner ID -220995299. Selection is random among loaded items.
-If Photos shows albums, a random loaded album is opened in a temporary inactive
-tab, a photo is chosen from its loaded items, and the temporary tab is closed.
-This is not a uniform sample of every photo in all albums.
-Photo attachment: use the editor's "Из VK" picker to attach an existing
-community album photo by its VK photo ID. No image download or file upload
-is performed by the extension. Album-grid thumbnails are used only to find
-available photo IDs; their small image files are never reuploaded.
-Prefer the previously selected photo/album when visible in the picker;
-otherwise choose a random available photo from the community's albums.
+Photo attachment: after Create/Post, click "Выбрать из ВКонтакте", then
+"Фото VK". Select one random community photo from the loaded general list
+without opening albums, then click "Выбрать фотографии". Photos are selected
+only inside the editor; no community Photos-tab navigation or temporary
+photo tab is used. Random selection is among currently loaded eligible items.
+The existing VK photo is attached by its ID; no image download or file upload
+is performed by the extension, and thumbnails are never reuploaded.
 Only photo IDs owned by community -220995299 are eligible. Verify selection
 and the final preview before posting; a mismatched explicit photo ID stops
 the attempt. If VK's picker is unsupported, stop and collect diagnostics

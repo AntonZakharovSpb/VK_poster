@@ -27,11 +27,11 @@ Scheduling uses [Chrome alarms](https://developer.chrome.com/docs/extensions/ref
 
 ## Customize
 
-Photos are attached through VK's native existing-photo picker, using the
-community photo ID. The extension does not download and reupload album-grid
-thumbnails. VK may show a small preview in the editor, but the post references
-the existing photo. Unsupported picker controls stop the attempt and produce
-diagnostics; there is no thumbnail-upload fallback.
+Photos are selected inside the post editor: **Выбрать из ВКонтакте → Фото VK →
+random community photo from the loaded general list → Выбрать фотографии**.
+No albums or separate photo tabs are opened. The existing photo ID is attached;
+thumbnails are not downloaded and reuploaded. Unsupported picker controls stop
+the attempt and produce diagnostics; there is no thumbnail-upload fallback.
 
 Music selection prefers the exact track. Duplicate matches use the first row;
 otherwise the first search result is accepted. An empty version-specific
@@ -39,7 +39,7 @@ search is repeated without the version suffix. Final attachment verification
 uses the actual selected track, which may differ from the requested version.
 
 - `extension/content.js`: VK interface automation and attachment checks.
-- `extension/background.js`: document fetching, photo ID discovery in temporary album tabs, and publication protection.
+- `extension/background.js`: document fetching and publication protection.
 - `extension/scheduler.js`: scheduling, community tab loading, notifications, and interrupted-job detection.
 - `extension/popup.js`, `popup.html`, `popup.css`: controls and preferences.
 

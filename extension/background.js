@@ -3,40 +3,6 @@ const LYRICS_SOURCE = 'https://docs.google.com/document/d/1P-uauTVZ_u8GkYct3f7UN
 if (typeof importScripts === 'function') importScripts('scheduler.js');
 let jobQueue = Promise.resolve();
 
-async function collectAlbum(raw, windowId) {
-  const url = new URL(raw);
-  if (!['vk.ru','vk.com'].includes(url.hostname) || url.protocol !== 'https:' || url.username || url.password || url.port ||
-      !/^\/album-220995299_\d+$/.test(url.pathname)) throw new Error('Недопустимый альбом сообщества.');
-  const options = {url: url.href, active: false};
-  if (Number.isInteger(windowId)) options.windowId = windowId;
-  const tab = await chrome.tabs.create(options);
-  try {
-    for (let i = 0; i < 160; i++) {
-      const current = await chrome.tabs.get(tab.id);
-      if (current.status === 'complete') break;
-      await new Promise(resolve => setTimeout(resolve, 250));
-    }
-    const results = await chrome.scripting.executeScript({target: {tabId: tab.id}, func: async () => {
-      const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
-      for (let n = 0; n < 100; n++) {
-        const photos = new Map();
-        for (const item of document.querySelectorAll('a[href*="photo-220995299_"],[data-photo-id^="-220995299_"]')) {
-          const id = item.dataset.photoId || item.getAttribute('href')?.match(/photo(-220995299_\d+)/)?.[1];
-          const card = item.closest('.photos_row,[data-photo-id]') || item;
-          const img = card.querySelector('img');
-          const background = [card,...card.querySelectorAll('[style]')].map(el => getComputedStyle(el).backgroundImage).find(css => css.startsWith('url('));
-          const image = img?.currentSrc || img?.src || background?.slice(4,-1).replace(/^["']|["']$/g,'');
-          if (id && image?.startsWith('https://') && !item.closest('[data-testid="post"],.wall_item')) photos.set(id,{id,image,url:`${location.origin}/photo${id}`});
-        }
-        if (photos.size) return [...photos.values()];
-        await delay(200);
-      }
-      throw new Error('VK не показал фотографии в выбранном альбоме.');
-    }});
-    return results[0].result;
-  } finally { try { await chrome.tabs.remove(tab.id); } catch { /* Already closed. */ } }
-}
-
 function jobCommand(message, sender) {
   const task = jobQueue.then(async () => {
     const {activeJob, publicationAttempt} = await chrome.storage.local.get(['activeJob', 'publicationAttempt']);
@@ -109,10 +75,6 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
       if (!fromVK) throw new Error('Запрос должен поступить из вкладки VK.');
       const result = await fetchLimited(LYRICS_SOURCE, 2_000_000);
       return {html: new TextDecoder().decode(result.data)};
-    }
-    if (message.type === 'album') {
-      if (!fromVK) throw new Error('Запрос альбома должен поступить из VK.');
-      return {photos: await collectAlbum(message.url, sender.tab.windowId)};
     }
     if (message.type === 'diagnostic') {
       if (!fromVK) throw new Error('Диагностика доступна только из VK.');
