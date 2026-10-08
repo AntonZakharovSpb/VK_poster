@@ -1,14 +1,12 @@
 {
   "manifest_version": 3,
   "name": "Три Слога — публикации VK",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Случайное фото, песня и куплет Три слога из документа — в вашей обычной вкладке VK.",
   "permissions": ["storage", "scripting", "activeTab", "alarms", "notifications"],
   "host_permissions": [
     "https://vk.ru/*", "https://vk.com/*",
-    "https://docs.google.com/document/d/1P-uauTVZ_u8GkYct3f7UN__g6pTFS8y-/*",
-    "https://*.vkuserphoto.ru/*", "https://*.vkuserphoto.com/*",
-    "https://*.userapi.com/*", "https://*.vk.com/*", "https://*.vk.ru/*"
+    "https://docs.google.com/document/d/1P-uauTVZ_u8GkYct3f7UN__g6pTFS8y-/*"
   ],
   "background": {"service_worker": "background.js"},
   "action": {"default_popup": "popup.html", "default_title": "Три Слога"}

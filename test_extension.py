@@ -214,44 +214,87 @@ class ExtensionTests(unittest.TestCase):
         }''')
         self.assertEqual(result,[0,1,0])
 
-    def photo_upload_fixture(self, change):
+    def native_photo_fixture(self, change):
         self.content('''<div id="editor" role="dialog" data-testid="posting_modal_box">
           <div contenteditable="true"></div><button data-testid="posting_base_screen_next">Далее</button>
-          <input type="file" accept="image/*"></div>''')
+          <button data-testid="posting_base_screen_select_from_vk" onclick="photoPicker.hidden=false">Из VK</button>
+          </div><div id="photoPicker" role="dialog" hidden>
+          <button data-photo-id="-220995299_1">Выбрать фото</button></div>''')
         self.page.evaluate('''change=>{
-          TriSloga.state.photo={id:'-220995299_1',image:'https://sun1.vkuserphoto.ru/photo.jpg'};
+          TriSloga.state.photo={id:'-220995299_1',image:'https://sun1.vkuserphoto.ru/tiny-thumbnail.jpg'};
           TriSloga.state.composer={root:document.getElementById('editor'),editor:document.querySelector('[contenteditable]'),modern:true};
-          chrome.runtime.sendMessage=async()=>({ok:true,base64:btoa('fixture image'),mime:'image/jpeg'});
-          document.querySelector('input[type=file]').onchange=new Function(change);
+          chrome.runtime.sendMessage=async msg=>{if(msg.type==='image') throw Error('Must not download');return {ok:true}};
+          document.querySelector('[data-photo-id]').onclick=()=>{
+            new Function(change)();document.getElementById('photoPicker').hidden=true;
+          };
         }''',change)
 
-    def test_photo_upload_follows_replaced_editor_without_old_modal_testid(self):
-        self.photo_upload_fixture("document.getElementById('editor').outerHTML='<div id=replacement role=dialog><button data-testid=posting_base_screen_next>Далее</button><div class=page_preview_photo>uploaded photo</div></div>'")
+    def test_native_photo_follows_replaced_editor_without_old_modal_testid(self):
+        self.native_photo_fixture("document.getElementById('editor').outerHTML='<div id=replacement role=dialog><button data-testid=posting_base_screen_next>Далее</button><div class=page_preview_photo data-photo-id=-220995299_1>native photo</div></div>'")
         self.page.evaluate('TriSloga.attachPhoto()')
         self.assertTrue(self.page.evaluate('TriSloga.state.photoAttached'))
         self.assertEqual(self.page.evaluate('TriSloga.currentComposerRoot().id'),'replacement')
         self.assertFalse(self.page.evaluate('TriSloga.state.composer.root.isConnected'))
-        self.assertGreater(self.page.evaluate('TriSloga.state.photoUpload.bytes'),0)
+        self.assertEqual(self.page.evaluate('TriSloga.state.photoSelectionVerified'),'-220995299_1')
 
-    def test_photo_upload_reports_editor_disappearance(self):
-        self.photo_upload_fixture("document.getElementById('editor').remove()")
+    def test_native_photo_reports_editor_disappearance(self):
+        self.native_photo_fixture("document.getElementById('editor').remove()")
         error=self.page.evaluate('async()=>{try{await TriSloga.attachPhoto();return ""}catch(e){return e.message}}')
         self.assertIn('Редактор VK исчез',error)
         self.assertFalse(self.page.evaluate('!!TriSloga.state.photoAttached'))
 
-    def test_photo_upload_reports_vk_error_reason(self):
-        self.photo_upload_fixture("document.getElementById('editor').insertAdjacentHTML('beforeend','<div role=alert>Не удалось загрузить фотографию</div>')")
+    def test_native_photo_reports_vk_error_reason(self):
+        self.native_photo_fixture("document.getElementById('editor').insertAdjacentHTML('beforeend','<div role=alert>Не удалось прикрепить фотографию</div>')")
         error=self.page.evaluate('async()=>{try{await TriSloga.attachPhoto();return ""}catch(e){return e.message}}')
-        self.assertIn('VK не принял фото: Не удалось загрузить фотографию',error)
+        self.assertIn('VK не прикрепил фото: Не удалось прикрепить фотографию',error)
         self.assertFalse(self.page.evaluate('!!TriSloga.state.photoAttached'))
 
-    def test_final_photo_preview_requires_recorded_photo_upload(self):
+    def test_native_photo_opens_community_album_checks_selection_and_done(self):
+        self.native_photo_fixture('')
+        self.page.evaluate('''()=>{
+          TriSloga.state.photo.albumUrl='https://vk.ru/album-220995299_7';
+          const picker=document.getElementById('photoPicker');
+          picker.innerHTML='<a id=album href=/album-220995299_7>Альбом</a>';
+          document.getElementById('album').onclick=e=>{
+            e.preventDefault();
+            picker.innerHTML='<label data-photo-id=-220995299_1>Фото<input type=checkbox></label><button id=done>Готово</button>';
+            document.getElementById('done').onclick=()=>{
+              if(!picker.querySelector('input').checked) throw Error('No photo selected');
+              document.getElementById('editor').insertAdjacentHTML('beforeend','<div class=page_preview_photo data-photo-id=-220995299_1>native photo</div>');
+              picker.hidden=true;
+            };
+          };
+        }''')
+        self.page.evaluate('TriSloga.attachPhoto()')
+        self.assertTrue(self.page.evaluate('TriSloga.state.photoAttached'))
+        self.assertTrue(self.page.locator('#photoPicker input').is_checked())
+        self.assertEqual(self.page.evaluate('TriSloga.state.photoSelectionVerified'),'-220995299_1')
+
+    def test_native_photo_refuses_personal_photos_without_upload_fallback(self):
+        self.native_photo_fixture('')
+        self.page.evaluate('document.querySelector("[data-photo-id]").dataset.photoId="12345_1"')
+        error=self.page.evaluate('async()=>{try{await TriSloga.attachPhoto();return ""}catch(e){return e.message}}')
+        self.assertIn('не найдены альбомы сообщества',error)
+        self.assertFalse(self.page.evaluate('!!TriSloga.state.photoAttached'))
+
+    def test_native_photo_verification_rejects_wrong_explicit_photo_id(self):
+        self.content('<div id=root><div class=page_preview_photo data-photo-id=-220995299_2>Wrong photo</div></div>')
+        result=self.page.evaluate('''()=>{
+          TriSloga.state.photo={id:'-220995299_1'};
+          TriSloga.state.photoAttached=true;TriSloga.state.photoSelectionVerified='-220995299_1';
+          return TriSloga.photoAttachments(document.getElementById('root')).length;
+        }''')
+        self.assertEqual(result,0)
+
+    def test_final_photo_preview_requires_verified_native_selection(self):
         self.content('''<div id="root"><div data-testid="posting_preview_attachment_item">
           <img width="100" height="100" src="https://sun1.vkuserphoto.ru/selected.jpg"></div></div>''')
         result=self.page.evaluate('''()=>{
           const root=document.getElementById('root');
           const before=TriSloga.photoAttachments(root).length;
+          TriSloga.state.photo={id:'-220995299_1'};
           TriSloga.state.photoAttached=true;
+          TriSloga.state.photoSelectionVerified=TriSloga.state.photo.id;
           const after=TriSloga.photoAttachments(root).length;
           root.querySelector('[data-testid="posting_preview_attachment_item"]').insertAdjacentHTML('beforeend','<video></video>');
           return [before,after,TriSloga.photoAttachments(root).length];
@@ -336,15 +379,15 @@ class ExtensionTests(unittest.TestCase):
         }''')
         self.assertEqual(result, {'successfulClaims':1,'start':True,'retry':False,'reset':True})
 
-    def test_image_allowlist_rejects_lookalike_domains(self):
+    def test_background_rejects_photo_download_requests_without_fetching(self):
         self.page.add_script_tag(path=str(EXT/'background.js'))
-        results = self.page.evaluate('''() => [
-          allowedImage('https://sun1.vkuserphoto.ru/photo.jpg'),
-          allowedImage('https://vkuserphoto.ru.attacker.example/photo.jpg'),
-          allowedImage('http://sun1.vkuserphoto.ru/photo.jpg'),
-          allowedImage('https://evil@sun1.vkuserphoto.ru/photo.jpg')
-        ]''')
-        self.assertEqual(results, [True,False,False,False])
+        result = self.page.evaluate('''async()=>{
+          window.fetch=()=>{throw Error('Must not download a photo')};
+          return new Promise(resolve=>testListeners[0]({type:'image',url:'https://sun1.vkuserphoto.ru/photo.jpg'},
+            {id:chrome.runtime.id,url:location.href,tab:{id:7,url:location.href}},resolve));
+        }''')
+        self.assertFalse(result['ok'])
+        self.assertIn('Неизвестная команда',result['error'])
 
     def test_manifest_references_packaged_files(self):
         manifest=json.loads((EXT/'manifest.json').read_text(encoding='utf-8'))
@@ -410,11 +453,14 @@ class ExtensionTests(unittest.TestCase):
           <div id="editor" role="dialog" data-testid="posting_modal_box" hidden>
             <div data-testid="posting_coowners_cell">Пригласить соавторов</div>
             <div role="textbox" contenteditable="true" aria-label="Текст публикации"></div>
-            <input type="file" accept="image/*" onchange="this.insertAdjacentHTML('afterend','<div class=page_preview_photo>photo attached</div>')">
+            <button data-testid="posting_base_screen_select_from_vk" onclick="document.getElementById('photoPicker').hidden=false">Из VK</button>
             <button onclick="document.getElementById('picker').hidden=false"><span style="position:absolute;left:-10000px">Музыка</span></button>
             <button data-testid="posting_base_screen_next" onclick="window.nextCount=(window.nextCount||0)+1;document.getElementById('publish').hidden=false;
               document.querySelector('.page_preview_photo').outerHTML='<div data-testid=posting_preview_attachment_item><img width=100 height=100 src=https://sun1.vkuserphoto.ru/uploaded.jpg></div>';this.remove()">Далее</button>
             <button id="publish" data-testid="posting_submit_button" hidden onclick="window.publishCount=(window.publishCount||0)+1;document.getElementById('post').textContent=this.parentElement.querySelector('[contenteditable]').innerText;this.parentElement.hidden=true">Опубликовать</button>
+          </div>
+          <div id="photoPicker" role="dialog" hidden>
+            <button data-photo-id="-220995299_123" onclick="document.getElementById('editor').insertAdjacentHTML('beforeend','<div class=page_preview_photo data-photo-id=-220995299_123>photo attached</div>');this.parentElement.hidden=true">Фото из альбома</button>
           </div>
           <div id="picker" role="dialog" hidden>
             <div data-audio-id="-220995299_456"><button onclick="document.getElementById('editor').insertAdjacentHTML('beforeend',
@@ -431,6 +477,8 @@ class ExtensionTests(unittest.TestCase):
         }}''')
         self.page.evaluate('''async()=>{await TriSloga.run({automatic:true,scheduleRunId:'scheduled-fixture'})}''')
         self.assertEqual(self.page.evaluate('window.publishCount'),1)
+        self.assertFalse(self.page.evaluate('sentMessages.some(msg=>msg.type==="image")'))
+        self.assertEqual(self.page.locator('input[type=file]').count(),0)
         posted=self.page.locator('#post').text_content()
         self.assertRegex(posted,r'^Первая строка песни\.\nВторая строка песни\.\n{2,3}Три слога - Song$')
         self.assertEqual(self.page.evaluate('window.nextCount'),1)

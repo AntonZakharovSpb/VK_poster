@@ -10,7 +10,7 @@
   const all = (scope, selector) => [...scope.querySelectorAll(selector)];
   const label = el => normalize(el.getAttribute('aria-label') || el.getAttribute('title') || el.textContent);
   const state = {running: false, stopped: false, stage: '', logs: [], composer: null, photo: null, audio: null, panel: null,
-    photoPreview: null, photoAttached: false, audioSelectionVerified: null, communityContext: false};
+    photoAttached: false, audioSelectionVerified: null, communityContext: false};
 
   function one(items, description) {
     const matches = [...new Set(items)].filter(visible);
@@ -140,6 +140,7 @@
     state.stage = 'community photos';
     log('Ищу фотографии во вкладке Фото сообщества.');
     await section('photos');
+    let albumUrl;
     let photos = await until(() => {
       const items = photoCandidates();
       const albums = all(document, 'a[href]').filter(a => new RegExp(`^/album${OWNER}_\\d+$`).test(new URL(a.href, location.href).pathname));
@@ -147,12 +148,14 @@
     }, 'фотографии или альбомы сообщества');
     if (photos.albums) {
       const album = photos.albums[Math.floor(Math.random() * photos.albums.length)];
+      albumUrl = album.href;
       log('Открываю случайный альбом в служебной вкладке; после выбора фото она закроется.');
       const result = await message({type: 'album', url: album.href});
       photos = result.photos;
     } else photos = photos.items;
     if (!photos.length) throw new Error('В выбранном альбоме нет доступных фотографий.');
     state.photo = photos[Math.floor(Math.random() * photos.length)];
+    if (albumUrl) state.photo.albumUrl = albumUrl;
     log(`Выбрана фотография ${state.photo.id} из ${photos.length} загруженных.`);
     state.stage = 'community music';
     await section('audios');
@@ -269,63 +272,106 @@
     }
     return one(matches, `кнопка ${kind === 'photo' ? 'Фото' : 'Музыка'} в редакторе публикации`);
   }
-  async function attachPhoto() {
-    state.stage = 'attach photo';
-    const originalImages = new Set(all(currentComposerRoot(), 'img').map(img => img.currentSrc || img.src));
-    const image = await message({type: 'image', url: state.photo.image});
-    const data = Uint8Array.from(atob(image.base64), char => char.charCodeAt(0));
-    const ext = image.mime === 'image/png' ? 'png' : image.mime === 'image/webp' ? 'webp' : 'jpg';
-    const file = new File([data], `tri-sloga-${state.photo.id}.${ext}`, {type: image.mime});
-    const liveRoot = currentComposerRoot();
-    if (!liveRoot) throw new Error('Редактор VK закрылся во время загрузки фото. Откройте сообщество и нажмите «Исправлено — повторить».');
-    let inputs = all(currentComposerRoot(), 'input[type="file"]').filter(el => /image|\.jpe?g|\.png/iu.test(el.accept));
-    if (!inputs.length) {
-      await click(await attachmentControl('photo'));
-      await delay(500);
-      const dialogs = all(document, '[role="dialog"],.box_layout').filter(visible);
-      inputs = dialogs.flatMap(root => all(root, 'input[type="file"]')).filter(el => /image|\.jpe?g|\.png/iu.test(el.accept));
+  function photoId(el) {
+    for (const value of [el.dataset.photoId, el.dataset.id, el.getAttribute('href')]) {
+      const match = (value || '').match(/(?:photo)?(-?\d+_\d+)(?:$|[?&#])/u);
+      if (match) return match[1];
     }
-    inputs = [...new Set(inputs)];
-    if (inputs.length !== 1) throw new Error('Не удалось определить загрузку фото в редакторе. Если VK открыл выбор файла, закройте его; отправьте диагностику.');
-    if (state.stopped) throw new Error('Остановлено пользователем.');
-    const transfer = new DataTransfer(); transfer.items.add(file); inputs[0].files = transfer.files;
-    state.photoUpload = {time: new Date().toISOString(), bytes: file.size, mime: file.type,
-      inputTestid: inputs[0].dataset.testid || null, dispatched: true};
-    inputs[0].dispatchEvent(new Event('change', {bubbles: true}));
+    return null;
+  }
+  function nativePhotoCards(root) {
+    const cards = new Map();
+    for (const el of all(root, '[data-photo-id],[data-id],a[href*="photo"]')) {
+      const id = photoId(el);
+      if (!id?.startsWith(OWNER + '_') || !visible(el)) continue;
+      const card = el.closest('[data-photo-id],.photos_choose_row,.photos_choose_photo,.photos_row') || el.closest('button') || el;
+      if (!cards.has(id)) cards.set(id, {id, card});
+    }
+    return [...cards.values()];
+  }
+  function nativePhotoPicker() {
+    const roots = all(document, '[role="dialog"],.box_layout').filter(root => visible(root) &&
+      !root.contains(state.composer.editor) && !root.querySelector('[contenteditable="true"],[data-testid="posting_base_screen_next"],[data-testid="posting_submit_button"]') &&
+      root.querySelector('[data-photo-id],a[href*="photo"],a[href*="album"],[data-testid*="photo"],[data-testid*="album"]'));
+    const inner = roots.filter(root => !roots.some(other => other !== root && root.contains(other)));
+    if (inner.length > 1) throw new Error('Открыто несколько окон выбора фотографии.');
+    return inner[0];
+  }
+  function nativePhotoPreviews(root) {
+    if (!root) return [];
+    const candidates = all(root, '[data-attachment-type="photo"],.page_preview_photo,[data-testid="primary-attachment-photo"],[data-testid="post-editor-photo"],[data-testid="photo-attachment"],[data-testid="posting_preview_attachment_item"]')
+      .filter(visible).filter(el => !el.querySelector('video,[data-attachment-type="video"]'));
+    return candidates.filter(el => !candidates.some(other => other !== el && other.contains(el)))
+      .filter(el => {
+        const ids = [el, ...all(el, '[data-photo-id],[data-id],a[href*="photo"]')].map(photoId).filter(Boolean);
+        return !ids.length || ids.every(id => id === state.photo.id);
+      });
+  }
+  async function attachPhoto() {
+    state.stage = 'choose photo from VK';
+    const root = currentComposerRoot();
+    if (!root) throw new Error('Редактор VK закрыт. Откройте сообщество и нажмите «Исправлено — повторить».');
+    const existing = all(root, '[data-testid="posting_base_screen_select_from_vk"]').map(el => el.closest('button,[role="button"]') || el).filter(visible);
+    await click(existing.length ? one(existing, 'выбор фото из VK') : await attachmentControl('photo'));
+    await delay(300);
+    const menuItems = all(document, '[role="menu"],[data-testid="dropdownactionsheet"]').filter(visible)
+      .flatMap(menu => control(menu, /^(Фотография|Фотографии|Фото)$/u)).filter(visible);
+    if (menuItems.length === 1) await click(menuItems[0]);
+    let picker = await until(nativePhotoPicker, 'окно выбора фотографии из VK');
+    const group = control(picker, /^Три Слога$/iu).filter(visible);
+    if (group.length === 1) { await click(group[0]); await delay(400); picker = await until(nativePhotoPicker, 'фотографии сообщества в выборе VK'); }
+    let cards = nativePhotoCards(picker);
+    if (!cards.length) {
+      const albums = all(picker, 'a[href]').filter(el => visible(el) && new RegExp(`^/album${OWNER}_\\d+$`).test(new URL(el.href, location.href).pathname));
+      if (!albums.length) throw new Error('В выборе фото VK не найдены альбомы сообщества Три Слога. Загрузка миниатюры отключена; скачайте диагностику.');
+      const album = albums.find(el => state.photo.albumUrl && new URL(el.href).pathname === new URL(state.photo.albumUrl).pathname) || albums[Math.floor(Math.random() * albums.length)];
+      await click(album);
+      cards = await until(() => {
+        const livePicker = nativePhotoPicker();
+        if (!livePicker) return null;
+        const loaded = nativePhotoCards(livePicker);
+        return loaded.length ? loaded : null;
+      }, 'фотографии альбома сообщества в выборе VK');
+    }
+    const chosen = cards.find(item => item.id === state.photo.id) || cards[Math.floor(Math.random() * cards.length)];
+    if (chosen.id !== state.photo.id) {
+      state.sourcePhoto = {...state.photo};
+      state.photo = {...state.photo, id: chosen.id};
+      log(`В выборе VK выбрана доступная фотография сообщества ${chosen.id}.`);
+    }
+    const checkbox = chosen.card.querySelector('input[type="checkbox"]');
+    const livePicker = nativePhotoPicker();
+    if (livePicker && all(livePicker, 'input[type="checkbox"]:checked').some(el => !chosen.card.contains(el))) {
+      throw new Error('В выборе VK уже отмечено другое вложение. Снимите его перед повтором.');
+    }
+    if (!checkbox?.checked) await click(checkbox && visible(checkbox) ? checkbox : chosen.card);
+    if (checkbox) await until(() => checkbox.checked, 'отмеченная фотография сообщества');
+    const after = nativePhotoPicker();
+    if (after) {
+      const done = control(after, /^(Прикрепить|Добавить|Готово|Выбрать)$/u).filter(visible);
+      if (done.length) await click(one(done, 'подтверждение выбора фотографии'));
+    }
     let missingSince;
     await until(() => {
-      const root = currentComposerRoot();
-      if (!root) {
+      const current = currentComposerRoot();
+      if (!current) {
         missingSince ??= Date.now();
-        if (Date.now() - missingSince > 3000) throw new Error('Редактор VK исчез после передачи фото. Загрузка не подтверждена; пост не отправлен. Откройте сообщество и нажмите «Исправлено — повторить».');
+        if (Date.now() - missingSince > 3000) throw new Error('Редактор VK исчез после выбора фотографии. Пост не отправлен.');
         return false;
       }
       missingSince = null;
-      const uploadError = all(root, '[role="alert"],[data-testid*="error"]').filter(visible)
-        .map(el => normalize(el.textContent)).find(text => /ошиб|не удалось|не поддерж|слишком|превыш/iu.test(text));
-      if (uploadError) throw new Error(`VK не принял фото: ${uploadError}`);
-      if (photoAttachments(root).length === 1) return true;
-      if (state.composer.modern) {
-        const newImages = all(root, 'img').filter(img => visible(img) && (img.currentSrc || img.src) &&
-          !originalImages.has(img.currentSrc || img.src) && img.getBoundingClientRect().width >= 80 &&
-          img.getBoundingClientRect().height >= 80 && !img.closest('[data-testid*="avatar"]'));
-        if (newImages.length === 1) { state.photoPreview = newImages[0].currentSrc || newImages[0].src; return true; }
-      }
-      return false;
-    }, 'прикреплённая фотография', 30000);
+      const error = all(current, '[role="alert"],[data-testid*="error"]').filter(visible).map(el => normalize(el.textContent))
+        .find(text => /ошиб|не удалось|не поддерж|слишком|превыш/iu.test(text));
+      if (error) throw new Error(`VK не прикрепил фото: ${error}`);
+      return !nativePhotoPicker() && nativePhotoPreviews(current).length === 1;
+    }, 'прикреплённая фотография из VK', 30000);
     state.photoAttached = true;
-    log('Фотография из сообщества прикреплена.');
+    state.photoSelectionVerified = state.photo.id;
+    log('Оригинальная фотография сообщества прикреплена из VK без скачивания и повторной загрузки.');
   }
   function photoAttachments(root) {
-    const specific = all(root, '[data-attachment-type="photo"],.page_preview_photo,[data-testid="primary-attachment-photo"],[data-testid="post-editor-photo"],[data-testid="photo-attachment"],[data-testid^="posting_"][data-testid*="photo"]')
-      .filter(visible).filter((el, i, items) => !items.some(other => other !== el && other.contains(el)));
-    if (specific.length) return specific;
-    if (state.photoAttached) {
-      const previews = all(root,'[data-testid="posting_preview_attachment_item"]').filter(el=>visible(el) &&
-        el.querySelector('img') && !el.querySelector('video,[data-attachment-type="video"]'));
-      if (previews.length) return previews;
-    }
-    return state.photoPreview ? all(root,'img').filter(img=>visible(img) && (img.currentSrc || img.src) === state.photoPreview) : [];
+    if (!state.photoAttached || !state.photoSelectionVerified || state.photoSelectionVerified !== state.photo?.id) return [];
+    return nativePhotoPreviews(root);
   }
   function audioAttachments(root) {
     if (root.querySelector('[data-testid="posting_audio_search_audio_input"]')) return [];
@@ -532,12 +578,16 @@
   }
   function diagnostics(error = '') {
     const scope = currentComposerRoot() || document;
-    return {version: '0.4.0', time: new Date().toISOString(), stage: state.stage, error,
+    return {version: '0.4.1', time: new Date().toISOString(), stage: state.stage, error,
       page: location.origin + location.pathname + location.hash,
       photo: state.photo?.id, audio: state.audio?.id, sourceAudio: state.sourceAudio,
       songTitle: state.songTitle,
       composerConnected: !!state.composer?.root?.isConnected,
-      liveComposerFound: !!currentComposerRoot(), photoUpload: state.photoUpload,
+      liveComposerFound: !!currentComposerRoot(), photoSelectionVerified: state.photoSelectionVerified,
+      sourcePhoto: state.sourcePhoto,
+      photoPickerControls: all(document, '[role="dialog"],.box_layout').filter(visible).map(root => ({
+        testid: root.dataset.testid, controls: all(root,'button,[role="button"],a,input').filter(visible).slice(0,50)
+          .map(el => ({testid:el.dataset.testid,label:label(el).slice(0,100),photoId:photoId(el),href:el.getAttribute('href')}))})),
       communityContext: state.communityContext, photoAttached: state.photoAttached, audioSelectionVerified: state.audioSelectionVerified,
       controls: all(scope, 'button,[role="button"],[role="menuitem"],input,[contenteditable="true"]').filter(visible).slice(0,100).map(el => ({
         tag: el.tagName, role: el.getAttribute('role'), testid: el.dataset.testid,
@@ -555,12 +605,12 @@
   async function run(options) {
     if (location.pathname !== PATH || !['vk.ru','vk.com'].includes(location.hostname)) throw new Error('Откройте сообщество Три Слога.');
     if (state.running) throw new Error('Публикация уже выполняется.');
-    state.running = true; state.stopped = false; state.logs = []; state.composer = null; state.photoPreview = null;
+    state.running = true; state.stopped = false; state.logs = []; state.composer = null;
     state.scheduleRunId = options.scheduleRunId || null;
     state.photoAttached = false; state.audioSelectionVerified = null; state.communityContext = false;
     state.sourceAudio = null;
     state.songTitle = null;
-    state.photoUpload = null;
+    state.photoSelectionVerified = null; state.sourcePhoto = null;
     const oldPanel = document.getElementById('tri-sloga-extension-panel');
     if (oldPanel) oldPanel.style.display = 'none';
     let jobId, outcome = {success: false, error: 'Публикация не завершена.'};
@@ -611,7 +661,7 @@
 
   globalThis.TriSloga = {run, photoCandidates, audioCandidates, composerCandidates, parseSongs, chooseSongExcerpt,
     songSimilarity, matchingCommunityAudio, state, openComposer,
-    creationMenuItems, musicPicker, matchesAudio, attachAudio, attachPhoto, currentComposerRoot, audioAttachments, photoAttachments, authorVerified};
+    creationMenuItems, musicPicker, matchesAudio, attachAudio, attachPhoto, nativePhotoCards, currentComposerRoot, audioAttachments, photoAttachments, authorVerified};
   chrome.runtime.onMessage.addListener((options, sender, reply) => {
     if (sender.id !== chrome.runtime.id) return;
     if (options.type === 'stop') {

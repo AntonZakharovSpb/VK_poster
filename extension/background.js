@@ -70,19 +70,10 @@ function jobCommand(message, sender) {
   return task;
 }
 
-function allowedImage(raw) {
-  const url = new URL(raw);
-  const roots = ['vkuserphoto.ru', 'vkuserphoto.com', 'userapi.com', 'vk.com', 'vk.ru'];
-  return url.protocol === 'https:' && !url.username && !url.password && !url.port &&
-    roots.some(root => url.hostname === root || url.hostname.endsWith('.' + root));
-}
-
-async function fetchLimited(url, limit, image = false) {
+async function fetchLimited(url, limit) {
   const response = await fetch(url, {signal: AbortSignal.timeout(25000), credentials: 'omit'});
   if (!response.ok) throw new Error(`Источник недоступен: HTTP ${response.status}`);
-  if (image && !allowedImage(response.url || url)) throw new Error('Неожиданный адрес изображения.');
   const type = (response.headers.get('content-type') || '').split(';')[0];
-  if (image && !['image/jpeg', 'image/png', 'image/webp'].includes(type)) throw new Error('Источник вернул не фотографию.');
   const reader = response.body.getReader();
   const chunks = [];
   let size = 0;
@@ -122,13 +113,6 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
     if (message.type === 'album') {
       if (!fromVK) throw new Error('Запрос альбома должен поступить из VK.');
       return {photos: await collectAlbum(message.url, sender.tab.windowId)};
-    }
-    if (message.type === 'image') {
-      if (!fromVK || !allowedImage(message.url)) throw new Error('Недопустимый источник фотографии.');
-      const {data, type} = await fetchLimited(message.url, 15_000_000, true);
-      let binary = '';
-      for (let i = 0; i < data.length; i += 8192) binary += String.fromCharCode(...data.subarray(i, i + 8192));
-      return {base64: btoa(binary), mime: type};
     }
     if (message.type === 'diagnostic') {
       if (!fromVK) throw new Error('Диагностика доступна только из VK.');

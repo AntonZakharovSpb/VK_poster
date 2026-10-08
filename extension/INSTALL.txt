@@ -1,4 +1,4 @@
-Три Слога — Chrome extension 0.4.0
+Три Слога — Chrome extension 0.4.1
 
 INSTALL ONCE
 1. In your NORMAL Chrome window, open chrome://extensions
@@ -65,12 +65,18 @@ community's owner ID -220995299. Selection is random among loaded items.
 If Photos shows albums, a random loaded album is opened in a temporary inactive
 tab, a photo is chosen from its loaded items, and the temporary tab is closed.
 This is not a uniform sample of every photo in all albums.
-Photo image: the rendition displayed by VK, downloaded and uploaded into the
-new post. It is not guaranteed to be the original full-resolution photo.
-Photo checks follow a replacement VK editor instead of retaining a detached
-dialog. A disappearing editor or VK upload error stops posting with a clear
-reason. Diagnostics record whether the editor was connected and the upload
-file size/type; the image file itself is not included in the report.
+Photo attachment: use the editor's "Из VK" picker to attach an existing
+community album photo by its VK photo ID. No image download or file upload
+is performed by the extension. Album-grid thumbnails are used only to find
+available photo IDs; their small image files are never reuploaded.
+Prefer the previously selected photo/album when visible in the picker;
+otherwise choose a random available photo from the community's albums.
+Only photo IDs owned by community -220995299 are eligible. Verify selection
+and the final preview before posting; a mismatched explicit photo ID stops
+the attempt. If VK's picker is unsupported, stop and collect diagnostics
+instead of falling back to a low-resolution upload.
+Photo checks follow a replacement VK editor and report a disappearing
+editor or VK attachment error. Diagnostics include photo-picker controls.
 Audio: match the community audio ID when VK exposes it. In modern music
 pickers without IDs, match title, artist and duration; duplicate matches use
 the first row. If no exact match appears in search, select the first result.
@@ -121,7 +127,6 @@ by double-clicking a file; the Load unpacked step is required.
 PERMISSIONS
 VK: operate in your community tab with your existing login.
 Google Docs: fetch the shared song document; no Google login is collected.
-VK image hosts: fetch the selected community photo.
 Local extension storage: schedule, status, operation lock and diagnostics.
 Alarms: wake the extension worker for scheduled attempts and the watchdog.
 Notifications: report failed or interrupted attempts to Windows.
