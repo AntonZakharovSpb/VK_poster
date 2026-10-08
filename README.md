@@ -40,6 +40,10 @@ chooses the first result credited to Три слога (including collaborations
 Other artists are skipped. If no band result appears, it uses the random
 community track reserved at the start. Final checks verify the selected track;
 fallback attachment must match the reserved community track.
+Search results must also have a similar title, so stale unrelated band rows
+cannot be selected while VK refreshes the list. Duplicate eligible versions
+use the first row. Browser tests use simulated search responses, not the live
+VK catalogue, and never publish to the real community.
 
 - `extension/content.js`: VK interface automation and attachment checks.
 - `extension/background.js`: document fetching and publication protection.

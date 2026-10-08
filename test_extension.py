@@ -170,10 +170,12 @@ class ExtensionTests(unittest.TestCase):
             ('Дом', [('Другой исполнитель', 'Дом'), ('Цугцванг, Три слога, NEMNOGODUSHNO', 'Дом')]),
             ('Человек с приветом', [('Другой исполнитель', 'Человек с приветом'), ('Три слога', 'Человек с приветом')]),
             ('Инкоммуникадо', [('Три слога', 'Инкоммуникадо')]),
+            ('Бродский', [('Три слога', 'Бродский версия 2026'), ('Три слога', 'Бродский')]),
+            ('Улыбайтесь здесь', [('Другой исполнитель', 'Улыбайтесь здесь'), ('Три слога', 'Улыбайтесь здесь')]),
+            # Separate negative scenarios for real titles, not catalogue claims.
             ('Бродский', [('Другой исполнитель', 'Бродский')]),
             ('Улыбайтесь здесь', []),
-            ('Звезда', [('Три слога', 'Звезда'), ('Три слога', 'Звезда (Live)')]),
-            ('Тревожных', [('НеТри слога', 'Тревожных'), ('Три слогаXYZ', 'Тревожных')]),
+            ('Заснежье', [('НеТри слога', 'Заснежье'), ('Три слогаXYZ', 'Заснежье')]),
         ]
         for title, results in cases:
             with self.subTest(title=title):
@@ -189,6 +191,7 @@ class ExtensionTests(unittest.TestCase):
                   TriSloga.state.composer={root:document.getElementById('editor'),editor:document.querySelector('[contenteditable]'),modern:true};
                   document.querySelector('[data-testid=posting_audio_search_audio_input]').oninput=e=>{
                     (window.actualQueries ||= []).push(e.target.value);
+                    const render=()=>{
                     rows.replaceChildren();
                     const matches=e.target.value===title ? results : [['Три слога','Заснежье']];
                     matches.forEach(([artist,name],index)=>{
@@ -198,6 +201,9 @@ class ExtensionTests(unittest.TestCase):
                       row.querySelector('[data-testid=music-cell-artists]').textContent=artist;
                       rows.append(row);
                     });
+                    };
+                    // Keep stale band rows visible while VK is fetching results.
+                    if(title==='Бродский') setTimeout(render,1800); else render();
                   };
                   document.getElementById('done').onclick=()=>{
                     const selected=rows.querySelector('input:checked').parentElement;

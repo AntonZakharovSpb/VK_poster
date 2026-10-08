@@ -452,7 +452,11 @@
   function firstBandSearchAudio(picker) {
     const rows = audioRows(picker);
     return rows.filter(row => !rows.some(other => other !== row && other.contains(row)))
-      .find(row => audioMetadata(row).title && /(?:^|[,;&/])\s*три\s+слога\s*(?=$|[,;&/])/iu.test(audioMetadata(row).artist));
+      .find(row => {
+        const audio = audioMetadata(row);
+        return songSimilarity(state.songTitle, audio.title) > 0 &&
+          /(?:^|[,;&/])\s*три\s+слога\s*(?=$|[,;&/])/iu.test(audio.artist);
+      });
   }
   function audioMetadata(row) {
     return {id: rowAudioId(row),
@@ -586,6 +590,7 @@
   function normalizedSongTitle(title) {
     return normalize(title).toLocaleLowerCase('ru').replace(/ё/gu, 'е')
       .replace(/(?:альбомная|альбомный|сингловая|сингловый|album|single)\s*(?:версия|version)?/giu, ' ')
+      .replace(/(?:версия|version)\s*\d{4}/giu, ' ')
       .replace(/[^а-яa-z0-9]+/gu, ' ').trim().replace(/\s+/gu, ' ');
   }
   function songSimilarity(wanted, candidate) {
@@ -625,7 +630,7 @@
   }
   function diagnostics(error = '') {
     const scope = currentComposerRoot() || document;
-    return {version: '0.4.6', time: new Date().toISOString(), stage: state.stage, error,
+    return {version: '0.4.7', time: new Date().toISOString(), stage: state.stage, error,
       page: location.origin + location.pathname + location.hash,
       photo: state.photo?.id, audio: state.audio?.id, sourceAudio: state.sourceAudio,
       songTitle: state.songTitle,
