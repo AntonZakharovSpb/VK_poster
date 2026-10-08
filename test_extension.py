@@ -160,12 +160,20 @@ class ExtensionTests(unittest.TestCase):
         self.assertTrue(self.page.locator('input[type="checkbox"]').is_checked())
         self.assertIn('Песня сообщества прикреплена',self.page.evaluate('TriSloga.state.logs.at(-1)'))
 
-    def test_document_title_search_attaches_first_result(self):
+    def test_document_title_search_prefers_band_or_community_fallback(self):
         cases = [
             ('Звезда моих тревожных', [('Три слога', 'Звезда моих тревожных'), ('Три слога', 'Звезда моих тревожных (Live)')]),
             ('Много зла', [('Три слога', 'Много зла альбомная версия'), ('Три слога', 'Много зла')]),
             ('Плутон - Гудзон', [('Три слога', 'Плутон-Гудзон')]),
             ('Заснежье', [('Другой исполнитель', 'Заснежье'), ('Три слога', 'Заснежье')]),
+            ('Мастер Тай Чи', [('Другой исполнитель', 'Мастер Тай Чи'), ('ТРИ СЛОГА', 'Мастер Тай Чи')]),
+            ('Дом', [('Другой исполнитель', 'Дом'), ('Цугцванг, Три слога, NEMNOGODUSHNO', 'Дом')]),
+            ('Человек с приветом', [('Другой исполнитель', 'Человек с приветом'), ('Три слога', 'Человек с приветом')]),
+            ('Инкоммуникадо', [('Три слога', 'Инкоммуникадо')]),
+            ('Бродский', [('Другой исполнитель', 'Бродский')]),
+            ('Улыбайтесь здесь', []),
+            ('Звезда', [('Три слога', 'Звезда'), ('Три слога', 'Звезда (Live)')]),
+            ('Тревожных', [('НеТри слога', 'Тревожных'), ('Три слогаXYZ', 'Тревожных')]),
         ]
         for title, results in cases:
             with self.subTest(title=title):
@@ -175,14 +183,16 @@ class ExtensionTests(unittest.TestCase):
                   <div id=rows><div data-audio-id=-220995299_999><span data-testid=music-cell-title>Заснежье</span><span data-testid=music-cell-artists>Три слога</span></div></div>
                   <button id=done>Готово</button></div>''')
                 self.page.evaluate('''({title,results})=>{
+                  window.actualQueries=[];
                   TriSloga.state.songTitle=title;
                   TriSloga.state.audio={id:'-220995299_999',title:'Заснежье',artist:'Три слога'};
                   TriSloga.state.composer={root:document.getElementById('editor'),editor:document.querySelector('[contenteditable]'),modern:true};
                   document.querySelector('[data-testid=posting_audio_search_audio_input]').oninput=e=>{
-                    window.actualQuery=e.target.value;
+                    (window.actualQueries ||= []).push(e.target.value);
                     rows.replaceChildren();
-                    results.forEach(([artist,name],index)=>{
-                      const row=document.createElement('div');row.dataset.audioId=`-220995299_${index+1}`;
+                    const matches=e.target.value===title ? results : [['Три слога','Заснежье']];
+                    matches.forEach(([artist,name],index)=>{
+                      const row=document.createElement('div');row.dataset.audioId=e.target.value===title ? `-220995299_${index+1}` : '-220995299_999';
                       row.innerHTML='<span data-testid=music-cell-title></span><span data-testid=music-cell-artists></span><input type=checkbox>';
                       row.querySelector('[data-testid=music-cell-title]').textContent=name;
                       row.querySelector('[data-testid=music-cell-artists]').textContent=artist;
@@ -197,11 +207,14 @@ class ExtensionTests(unittest.TestCase):
                   };
                 }''', {'title':title,'results':results})
                 self.page.evaluate('TriSloga.attachAudio()')
-                self.assertEqual(self.page.evaluate('window.actualQuery'),title)
-                self.assertEqual(self.page.evaluate('TriSloga.state.audio.title'),results[0][1])
-                self.assertEqual(self.page.evaluate('TriSloga.state.audio.artist'),results[0][0])
+                self.assertEqual(self.page.evaluate('window.actualQueries[0]'),title)
+                expected=next((item for item in results if item[0].lower() in ['три слога','цугцванг, три слога, nemnogodushno']), ('Три слога','Заснежье'))
+                self.assertEqual(self.page.evaluate('TriSloga.state.audio.title'),expected[1])
+                self.assertEqual(self.page.evaluate('TriSloga.state.audio.artist'),expected[0])
                 self.assertEqual(self.page.evaluate('TriSloga.audioAttachments(TriSloga.currentComposerRoot()).length'),1)
                 self.assertEqual(self.page.locator('input[type=checkbox]:checked').count(),1)
+                print(json.dumps({'chosen_title':title,'attached_artist':self.page.evaluate('TriSloga.state.audio.artist'),
+                                  'attached_title':self.page.evaluate('TriSloga.state.audio.title')},ensure_ascii=True))
 
     def test_album_version_falls_back_to_first_search_result_and_verifies_attachment(self):
         self.content('''<div id="editor" data-testid="posting_modal_box" role="dialog">

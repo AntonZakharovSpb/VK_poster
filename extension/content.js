@@ -449,6 +449,11 @@
     const outer = rows.filter(row => !rows.some(other => other !== row && other.contains(row)));
     return outer.find(row => audioMetadata(row).title && audioMetadata(row).artist);
   }
+  function firstBandSearchAudio(picker) {
+    const rows = audioRows(picker);
+    return rows.filter(row => !rows.some(other => other !== row && other.contains(row)))
+      .find(row => audioMetadata(row).title && /(?:^|[,;&/])\s*три\s+слога\s*(?=$|[,;&/])/iu.test(audioMetadata(row).artist));
+  }
   function audioMetadata(row) {
     return {id: rowAudioId(row),
       title: normalize(row.querySelector('[data-testid="music-cell-title"],[data-testid="MusicTrackRow_Title"],.audio_row__title_inner')?.textContent),
@@ -477,16 +482,16 @@
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(search, state.songTitle);
       search.dispatchEvent(new Event('input', {bubbles:true}));
       await delay(1200);
-      try { row = await until(() => firstSearchAudio(picker), 'результаты поиска по названию песни', 10000); }
+      try { row = await until(() => firstBandSearchAudio(picker), 'песня исполнителя Три слога в поиске', 10000); }
       catch (error) {
         if (state.stopped) throw error;
-        log('Поиск по названию не дал результатов. Добавляю резервную песню сообщества.');
+        log('В поиске нет исполнителя Три слога. Добавляю резервную песню сообщества.');
       }
       if (row) {
         const chosen = audioMetadata(row);
         state.sourceAudio = {...state.audio};
         state.audio = {...chosen, id: chosen.id || `search-result:${crypto.randomUUID()}`};
-        log(`Выбрана первая песня из поиска: ${chosen.artist} — ${chosen.title}.`);
+        log(`Выбрана песня исполнителя Три слога из поиска: ${chosen.artist} — ${chosen.title}.`);
       }
     }
     if (!row && !state.songTitle) row = selectedAudioRow(picker);
@@ -498,14 +503,14 @@
       try { row = await until(() => selectedAudioRow(picker), 'точная песня в поиске', 3000); }
       catch (error) {
         if (state.stopped) throw error;
-        row = firstSearchAudio(picker);
+        row = state.songTitle ? null : firstSearchAudio(picker);
         if (!row) {
           const baseTitle = state.audio.title.replace(/\s*[\[(].*?[\])]\s*/gu, ' ')
             .replace(/\s*(?:[-–—]\s*)?(?:альбомная|альбомный|сингловая|сингловый|album|single)\s*(?:версия|version)?\s*$/iu, '').trim();
           Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(search, `${state.audio.artist} ${baseTitle}`.trim());
           search.dispatchEvent(new Event('input', {bubbles: true}));
           await delay(1200);
-          row = await until(() => selectedAudioRow(picker) || firstSearchAudio(picker), 'результаты поиска песни');
+          row = await until(() => selectedAudioRow(picker) || (!state.songTitle && firstSearchAudio(picker)), 'результаты поиска песни сообщества');
         }
         const chosen = audioMetadata(row);
         state.sourceAudio = {...state.audio};
@@ -620,7 +625,7 @@
   }
   function diagnostics(error = '') {
     const scope = currentComposerRoot() || document;
-    return {version: '0.4.5', time: new Date().toISOString(), stage: state.stage, error,
+    return {version: '0.4.6', time: new Date().toISOString(), stage: state.stage, error,
       page: location.origin + location.pathname + location.hash,
       photo: state.photo?.id, audio: state.audio?.id, sourceAudio: state.sourceAudio,
       songTitle: state.songTitle,

@@ -2,7 +2,7 @@
 
 Editable Chrome extension for https://vk.ru/tri_sloga_band, with an earlier Windows desktop prototype included in `app.py`.
 
-The extension uses your existing Chrome VK login. First it reads the [song document](https://docs.google.com/document/d/1P-uauTVZ_u8GkYct3f7UN__g6pTFS8y-/edit), selects a random song heading and a random verse separated by empty lines (or the complete lyrics if there is only one section), and adds `Три слога - <song name>` beneath it. It then chooses a random loaded community photo, searches the music attachment picker for the selected song title, and attaches the first result. An empty search falls back to a random loaded community track. Choose an interval in hours and enable automatic publication: the first post starts immediately, then subsequent attempts follow the saved schedule.
+The extension uses your existing Chrome VK login. First it reads the [song document](https://docs.google.com/document/d/1P-uauTVZ_u8GkYct3f7UN__g6pTFS8y-/edit), selects a random song heading and a random verse separated by empty lines (or the complete lyrics if there is only one section), and adds `Три слога - <song name>` beneath it. It then chooses a random loaded community photo, searches the music attachment picker for the selected song title, and attaches the first result credited to Три слога. If no such artist appears, it falls back to a random loaded community track. Choose an interval in hours and enable automatic publication: the first post starts immediately, then subsequent attempts follow the saved schedule.
 
 The document must remain accessible through its shared HTML export. Use headings for song titles and empty paragraphs between verses; changes to the document are fetched for each post. A document/network/parsing failure uses the existing error pause and Fixed/retry workflow. No love/happiness keyword filter or Wikiquote fetch remains in the extension. The older desktop prototype still uses its original quote logic.
 
@@ -35,10 +35,11 @@ the community's total. No albums or separate photo tabs are opened. The existing
 thumbnails are not downloaded and reuploaded. Unsupported picker controls stop
 the attempt and produce diagnostics; there is no thumbnail-upload fallback.
 
-Music selection enters the document song title without the artist into the
-attachment search and chooses the first result, including duplicate versions
-or a different artist if VK lists it first. If no result appears, it uses a
-random community track. Final checks verify the track actually selected.
+Music selection enters the document song title into the attachment search and
+chooses the first result credited to Три слога (including collaborations).
+Other artists are skipped. If no band result appears, it uses the random
+community track reserved at the start. Final checks verify the selected track;
+fallback attachment must match the reserved community track.
 
 - `extension/content.js`: VK interface automation and attachment checks.
 - `extension/background.js`: document fetching and publication protection.
