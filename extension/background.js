@@ -1,6 +1,6 @@
 const COMMUNITY_PATH = '/tri_sloga_band';
 const LYRICS_SOURCE = 'https://docs.google.com/document/d/1P-uauTVZ_u8GkYct3f7UN__g6pTFS8y-/export?format=html';
-if (typeof importScripts === 'function') importScripts('scheduler.js');
+if (typeof importScripts === 'function') importScripts('batch.js');
 let jobQueue = Promise.resolve();
 
 function jobCommand(message, sender) {
@@ -23,7 +23,7 @@ function jobCommand(message, sender) {
     if (message.type === 'beginPublish') {
       if (publicationAttempt?.status === 'pending') throw new Error('Повторная отправка заблокирована. Проверьте стену.');
       await chrome.storage.local.set({publicationAttempt: {jobId: message.jobId, status: 'pending',
-        time: new Date().toISOString(), photo: message.photo, audio: message.audio}});
+        time: new Date().toISOString(), photo: message.photo, audio: message.audio,scheduledAt:message.scheduledAt,batchId:message.batchId}});
       return {};
     }
     if (message.type === 'completePublish' && publicationAttempt?.jobId === message.jobId) {
@@ -61,7 +61,12 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
   const fromVK = sender.tab && /^https:\/\/(vk\.ru|vk\.com)\//.test(sender.url || sender.tab.url || '');
   if (!fromExtension) return;
   const task = async () => {
-    if (['scheduleSet', 'scheduleStop', 'scheduleStatus', 'scheduleResult', 'scheduleRetry'].includes(message.type)) {
+    if (message.type.startsWith('batch')) {
+      if(['batchProgress','batchError','batchCaptcha','batchHeartbeat'].includes(message.type) && !fromVK) throw new Error('Команда должна поступить из VK.');
+      if(['batchStart','batchStatus'].includes(message.type) && sender.tab) throw new Error('Используйте настройки расширения.');
+      return batchCommand(message,sender);
+    }
+    if (typeof scheduleCommand === 'function' && ['scheduleSet', 'scheduleStop', 'scheduleStatus', 'scheduleResult', 'scheduleRetry'].includes(message.type)) {
       if (message.type === 'scheduleRetry' && sender.tab && !fromVK) throw new Error('Повтор доступен только из VK.');
       if (message.type === 'scheduleResult' && !fromVK) throw new Error('Результат должен поступить из VK.');
       if (['scheduleSet', 'scheduleStatus'].includes(message.type) && sender.tab) throw new Error('Используйте настройки расширения.');

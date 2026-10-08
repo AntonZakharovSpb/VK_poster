@@ -1,15 +1,18 @@
 <!doctype html>
 <html lang="ru"><head><meta charset="utf-8"><title>Три Слога</title><link rel="stylesheet" href="popup.css"></head>
 <body>
-<header><span class="mark">ТС</span><div><h1>Три Слога</h1><p>Автоматические публикации VK</p></div></header>
+<header><span class="mark">ТС</span><div><h1>Три Слога</h1><p>Партия отложенных публикаций VK</p></div></header>
 <div class="community">Фото сообщества · песня · куплет Три слога</div>
-<label for="interval">Публиковать каждые N часов</label>
-<input id="interval" type="number" min="0.5" max="8760" step="0.5" value="6">
-<p class="hint">После включения первый пост создаётся сразу. Затем — по выбранному интервалу. Chrome должен работать, компьютер — быть включён.</p>
-<button id="enable" class="primary">Включить</button>
+<label for="amount">Количество постов (Amount)</label>
+<input id="amount" type="number" min="1" max="1000" step="1" value="10">
+<label for="interval">Пауза между созданием постов, секунды (Interval)</label>
+<input id="interval" type="number" min="1" max="86400" step="1" value="30">
+<p class="hint">Начинаем на день позже последней записи в «Отложенные», сохраняя её время. Каждый следующий пост — ещё на день позже. Если список пуст, начинаем завтра в текущее московское время. Оставьте Chrome и вкладку VK открытыми до завершения партии.</p>
+<button id="enable" class="primary">Запланировать партию</button>
 <button id="disable" class="secondary">Остановить</button>
 <p id="status" role="status">Загружаю настройки…</p>
 <button id="fixed" class="primary" hidden>Исправлено — повторить</button>
+<button id="captcha" class="primary" hidden>ОК — продолжить</button>
 <button id="diagnostics">Скачать диагностику</button>
 <script src="popup.js"></script>
 </body></html>

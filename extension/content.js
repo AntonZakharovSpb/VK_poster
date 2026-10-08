@@ -11,6 +11,24 @@
   const label = el => normalize(el.getAttribute('aria-label') || el.getAttribute('title') || el.textContent);
   const state = {running: false, stopped: false, stage: '', logs: [], composer: null, photo: null, audio: null, panel: null,
     photoAttached: false, audioSelectionVerified: null, communityContext: false};
+  function captchaVisible() {
+    return all(document,'iframe[src*="captcha"],iframe[src*="challenge"],input[name*="captcha"],[data-testid*="captcha" i],[id*="captcha" i],.captcha').some(visible);
+  }
+  function pauseForCaptcha() {
+    if(!state.batch || state.captchaPaused || !captchaVisible()) return;
+    state.captchaPaused=true;
+    log('CAPTCHA: действия приостановлены. Решите её и нажмите «ОК — продолжить» в расширении.');
+    message({type:'batchCaptcha',batchId:state.batch.id,paused:true}).catch(()=>{});
+  }
+  async function captchaGate() {
+    const started=Date.now();pauseForCaptcha();
+    while(state.captchaPaused) {
+      if(state.stopped || state.batchStopped) throw new Error('Остановлено пользователем.');
+      await delay(200);
+    }
+    return Date.now()-started;
+  }
+  new MutationObserver(pauseForCaptcha).observe(document.documentElement,{subtree:true,childList:true,attributes:true});
 
   function one(items, description) {
     const matches = [...new Set(items)].filter(visible);
@@ -25,8 +43,9 @@
     if (state.panel) state.panel.querySelector('pre').textContent = state.logs.join('\n');
   }
   async function until(fn, description, timeout = 15000) {
-    const end = Date.now() + timeout;
+    let end = Date.now() + timeout;
     while (Date.now() < end) {
+      end += await captchaGate();
       if (state.stopped) throw new Error('Остановлено пользователем.');
       const result = fn();
       if (result) return result;
@@ -35,11 +54,13 @@
     throw new Error(`Не найдено: ${description}.`);
   }
   async function click(el) {
+    await captchaGate();
     if (state.stopped) throw new Error('Остановлено пользователем.');
     if (!visible(el)) throw new Error('Нужная кнопка сейчас скрыта.');
     el.scrollIntoView({block: 'center'});
     // Let sticky headers/React settle after scrolling before sending the press.
     await delay(120);
+    await captchaGate();
     if (!el.isConnected && el.dataset.testid) {
       el = one(all(document, `[data-testid="${CSS.escape(el.dataset.testid)}"]`), 'обновлённая кнопка');
     }
@@ -51,6 +72,8 @@
     // Some VK controls open on a pointer/mouse press rather than a lone click.
     for (const type of ['pointerover', 'mouseover', 'pointerenter', 'mouseenter', 'pointermove', 'mousemove',
                         'pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click']) {
+      await captchaGate();
+      if(state.stopped || state.batchStopped) throw new Error('Остановлено пользователем.');
       if (type === 'pointerup') el.focus?.({preventScroll: true});
       const down = type.endsWith('down');
       const EventClass = type.startsWith('pointer') ? PointerEvent : MouseEvent;
@@ -76,13 +99,13 @@
         const {publicationAttempt} = await chrome.storage.local.get('publicationAttempt');
         const uncertain = publicationAttempt?.status === 'pending';
         if (uncertain && !confirm('Проверьте стену: предыдущий пост мог появиться. Подтвердите, что его нет, прежде чем создавать новый.')) return;
-        try { await message({type:'scheduleRetry', confirmNoPost:uncertain}); }
+        try { await message({type:'batchResume', confirmNoPost:uncertain}); }
         catch (error) { panel(); log(error.message); }
       };
       root.getElementById('hide').onclick = () => { host.style.display = 'none'; };
       root.getElementById('stop').onclick = () => {
         state.stopped = true; log('Останавливаю действия и расписание…');
-        message({type: 'scheduleStop'}).catch(() => {});
+        state.batchStopped=true; message({type: 'batchStop'}).catch(() => {});
       };
       root.getElementById('copy').onclick = async () => {
         try { await navigator.clipboard.writeText(state.logs.join('\n')); log('Журнал скопирован.'); }
@@ -289,9 +312,10 @@
     return inner[0];
   }
   async function loadPhotoGrid() {
-    const started = Date.now();
+    let started = Date.now();
     let stable = 0, previous = '';
     while (Date.now() - started < 30000) {
+      started += await captchaGate();
       if (state.stopped) throw new Error('Остановлено пользователем.');
       const picker = nativePhotoPicker();
       const cards = picker ? nativePhotoCards(picker) : [];
@@ -630,7 +654,11 @@
   }
   function diagnostics(error = '') {
     const scope = currentComposerRoot() || document;
-    return {version: '0.4.8', time: new Date().toISOString(), stage: state.stage, error,
+    return {version: '0.5.0', time: new Date().toISOString(), stage: state.stage, error,
+      batch:state.batch ? {id:state.batch.id,amount:state.batch.amount,completed:state.batch.completed,intervalSeconds:state.batch.intervalSeconds} : null,
+      plannedAt:state.plannedAt,captchaPaused:!!state.captchaPaused,
+      dateInputs:all(document,'input[type="date"],input[type="time"],input[type="datetime-local"],input[data-testid*="date"],input[data-testid*="time"]').filter(visible)
+        .map(el=>({type:el.type,testid:el.dataset.testid,value:el.value,placeholder:el.placeholder})),
       page: location.origin + location.pathname + location.hash,
       photo: state.photo?.id, audio: state.audio?.id, sourceAudio: state.sourceAudio,
       songTitle: state.songTitle,
@@ -658,6 +686,155 @@
       testids: [...new Set(all(scope, '[data-testid]').map(el => el.dataset.testid))].slice(0,150), logs: state.logs};
   }
 
+  const MOSCOW='Europe/Moscow';
+  function dateParts(timestamp) {
+    return Object.fromEntries(new Intl.DateTimeFormat('en-GB',{timeZone:MOSCOW,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'})
+      .formatToParts(new Date(timestamp)).filter(part=>part.type!=='literal').map(part=>[part.type,part.value]));
+  }
+  function moscowDate(year,month,day,hour,minute) {
+    const value=Date.UTC(year,month-1,day,hour-3,minute);
+    const p=dateParts(value);
+    if(Number(p.year)!==year||Number(p.month)!==month||Number(p.day)!==day||Number(p.hour)!==hour||Number(p.minute)!==minute) return null;
+    return value;
+  }
+  function parsePostDate(text,now=Date.now()) {
+    const normalized=normalize(text).toLocaleLowerCase('ru');
+    const today=dateParts(now);
+    let match=normalized.match(/(?:^|\D)(\d{1,2})[./](\d{1,2})[./](\d{4}).*?(\d{1,2}):(\d{2})/u);
+    if(match) return moscowDate(+match[3],+match[2],+match[1],+match[4],+match[5]);
+    const months=['янв','фев','мар','апр','ма','июн','июл','авг','сен','окт','ноя','дек'];
+    match=normalized.match(/(\d{1,2})\s+([а-яё]+)(?:\s+(\d{4}))?(?:\s*г\.?)?\s*(?:в|,)?\s*(\d{1,2}):(\d{2})/u);
+    if(match) {
+      const month=months.findIndex(name=>match[2].startsWith(name))+1;
+      if(!month) return null;
+      let year=Number(match[3]||today.year);
+      let value=moscowDate(year,month,+match[1],+match[4],+match[5]);
+      if(!match[3] && value!==null && value<now-60000) value=moscowDate(year+1,month,+match[1],+match[4],+match[5]);
+      return value;
+    }
+    match=normalized.match(/(сегодня|завтра|послезавтра).*?(\d{1,2}):(\d{2})/u);
+    if(match) {
+      const value=moscowDate(+today.year,+today.month,+today.day,+match[2],+match[3]);
+      return value===null?null:value+({сегодня:0,завтра:1,послезавтра:2}[match[1]])*86400000;
+    }
+    return null;
+  }
+  function pendingPostDate(post) {
+    const times=all(post,'time[datetime],[data-scheduled-at],[data-publish-date]');
+    for(const el of times) {
+      const raw=el.getAttribute('datetime')||el.dataset.scheduledAt||el.dataset.publishDate;
+      const value=/^\d+$/u.test(raw||'') ? Number(raw)*(raw.length<=10?1000:1) : Date.parse(raw);
+      if(Number.isFinite(value)) return value;
+    }
+    const labels=all(post,'[data-testid="post_date_block_preview"],.post_date,[data-testid*="schedule-date"]');
+    for(const el of labels) {const value=parsePostDate(el.textContent);if(value!==null)return value;}
+    return parsePostDate(post.textContent);
+  }
+  async function openPending() {
+    const tab=await until(()=>{
+      const matches=all(document,'button,a,[role="tab"],[role="button"]').filter(el=>visible(el)&&/^Отложенные(?:\s*\(?\d+\)?)?$/u.test(label(el)));
+      return matches.length ? one(matches,'вкладка «Отложенные»') : null;
+    },'вкладка «Отложенные»');
+    await click(tab);await delay(700);
+    return until(()=>all(document,'[data-testid="scheduled-posts"],#page_wall_posts,[data-testid="feed-items"]').find(visible),'список отложенных записей');
+  }
+  async function latestPendingDate() {
+    state.stage='read scheduled posts';
+    let root=await openPending();
+    let latest=null,stable=0,signature='',started=Date.now();
+    while(Date.now()-started<45000) {
+      started += await captchaGate();
+      const posts=all(root,'[data-testid="post"],.wall_item').filter(visible);
+      for(const post of posts) {
+        const value=pendingPostDate(post);
+        if(value===null) throw new Error('Не удалось прочитать дату отложенной записи. Нужна диагностика формата VK.');
+        latest=latest===null?value:Math.max(latest,value);
+      }
+      if(!posts.length && /нет отложенных|отложенных (?:записей|постов) нет|пока нет|нет записей/iu.test(root.textContent)) return null;
+      const more=control(root,/^(Показать ещё|Показать еще|Ещё|Еще)$/u).filter(visible);
+      if(more.length===1) await click(more[0]);
+      else {
+        let scroll=root;
+        while(scroll && !(scroll.scrollHeight>scroll.clientHeight+2 && /auto|scroll/u.test(getComputedStyle(scroll).overflowY)))scroll=scroll.parentElement;
+        if(scroll) {scroll.scrollTop=scroll.scrollHeight;scroll.dispatchEvent(new Event('scroll',{bubbles:true}));}
+        else if(posts.length) posts[posts.length-1].scrollIntoView({block:'end'});
+      }
+      await delay(700);
+      root=all(document,'[data-testid="scheduled-posts"],#page_wall_posts,[data-testid="feed-items"]').find(visible)||root;
+      const current=`${all(root,'[data-testid="post"],.wall_item').filter(visible).length}:${root.scrollHeight}:${latest}`;
+      stable=current===signature?stable+1:0;signature=current;
+      if(stable>=4 && !more.length) {if(latest===null)throw new Error('Не удалось определить, пуст ли список «Отложенные».');return latest;}
+    }
+    throw new Error('Список «Отложенные» не закончил загрузку. Дата последней записи не подтверждена.');
+  }
+  function setField(input,value) {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,value);
+    input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}));
+  }
+  async function prepareScheduledSubmission(timestamp) {
+    state.stage='schedule date';
+    let root=currentComposerRoot();
+    const options=control(root,/^(Запланировать|Отложить|Запланировать публикацию)$/u).filter(visible);
+    const schedule=options.length ? one(options,'кнопка планирования') : one(all(root,'button,[role="button"]').filter(el=>visible(el)&&/запланировать|время публикации|дата публикации/iu.test(el.getAttribute('aria-label')||el.getAttribute('title')||'')),'настройка даты публикации');
+    await click(schedule);
+    const dateRoot=await until(()=>all(document,'[role="dialog"],.box_layout').filter(visible)
+      .filter(el=>el.querySelector('input[type="date"],input[type="datetime-local"],input[placeholder*="дд"],input[placeholder*="ДД"],input[data-testid*="date"]'))
+      .find(el=>!all(el,'[role="dialog"],.box_layout').some(inner=>inner.querySelector('input[type="date"],input[type="datetime-local"],input[placeholder*="дд"],input[placeholder*="ДД"],input[data-testid*="date"]'))),'выбор даты отложенной записи');
+    const p=dateParts(timestamp),day=`${p.year}-${p.month}-${p.day}`,time=`${p.hour}:${p.minute}`;
+    const expected=[];
+    const combined=all(dateRoot,'input[type="datetime-local"]').filter(visible);
+    if(combined.length) {
+      const input=one(combined,'дата и время');setField(input,`${day}T${time}`);expected.push([input,`${day}T${time}`]);
+    }
+    else {
+      const dates=all(dateRoot,'input[type="date"],input[placeholder*="дд"],input[placeholder*="ДД"],input[data-testid*="date"]').filter(visible);
+      const date=one(dates,'поле даты'),dateValue=date.type==='date'?day:`${p.day}.${p.month}.${p.year}`;setField(date,dateValue);expected.push([date,dateValue]);
+      await captchaGate();
+      const times=all(dateRoot,'input[type="time"],input[placeholder*="чч"],input[placeholder*="ЧЧ"],input[data-testid*="time"]').filter(visible);
+      const clock=one(times,'поле времени');setField(clock,time);expected.push([clock,time]);
+    }
+    await delay(300);await captchaGate();
+    if(expected.some(([input,value])=>!input.isConnected || input.value!==value)) throw new Error('VK изменил введённую дату или время. Запись не отправлена.');
+    const save=control(dateRoot,/^(Сохранить|Выбрать|Готово)$/u).filter(visible);
+    if(save.length) {await click(one(save,'сохранение даты'));await delay(300);root=currentComposerRoot();}
+    else root=dateRoot;
+    const final=one(control(root,/^(Запланировать|Отложить|Запланировать публикацию)$/u),'подтверждение отложенной записи');
+    if(final.disabled) throw new Error('VK не принял дату публикации.');
+    log(`Дата публикации: ${p.day}.${p.month}.${p.year} ${time} (Москва).`);
+    return final;
+  }
+  async function runBatch(batch) {
+    if(state.batchRunning) throw new Error('Партия уже выполняется в этой вкладке.');
+    state.batchRunning=true;state.batch=batch;state.batchStopped=false;state.stopped=false;state.captchaPaused=false;
+    const heartbeat=setInterval(()=>message({type:'batchHeartbeat',batchId:batch.id}).catch(()=>{}),30000);
+    try {
+      await captchaGate();
+      const latest=await latestPendingDate();
+      let previous=Math.floor(Math.max(latest||0,batch.lastDate||0)/60000)*60000;
+      if(!previous) {const p=dateParts(Date.now());previous=moscowDate(+p.year,+p.month,+p.day,+p.hour,+p.minute);}
+      for(let completed=batch.completed;completed<batch.amount;completed++) {
+        if(state.batchStopped) throw new Error('Остановлено пользователем.');
+        const planned=previous+86400000;
+        state.plannedAt=planned;
+        const result=await run({automatic:true,scheduledAt:planned});
+        if(!result?.success) throw new Error(result?.error||'Отложенная запись не подтверждена.');
+        await message({type:'batchProgress',batchId:batch.id,completed:completed+1,lastDate:planned});
+        state.batch.completed=completed+1;state.batch.lastDate=planned;
+        previous=planned;
+        if(completed+1<batch.amount) {
+          state.stage='batch interval';
+          let remaining=batch.intervalSeconds*1000;
+          while(remaining>0) {
+            await captchaGate();if(state.batchStopped)throw new Error('Остановлено пользователем.');
+            const chunk=Math.min(remaining,200);await delay(chunk);remaining-=chunk;
+          }
+        }
+      }
+    } catch(error) {
+      log('Партия остановлена: '+error.message);panel();
+      try {await message({type:'diagnostic',data:diagnostics(error.message)});await message({type:'batchError',batchId:batch.id,error:error.message});}catch{}
+    } finally {clearInterval(heartbeat);state.batchRunning=false;state.batch=null;state.captchaPaused=false;}
+  }
   async function run(options) {
     if (location.pathname !== PATH || !['vk.ru','vk.com'].includes(location.hostname)) throw new Error('Откройте сообщество Три Слога.');
     if (state.running) throw new Error('Публикация уже выполняется.');
@@ -683,7 +860,7 @@
       log(state.songTitle ? `Текст подготовлен: ${state.songTitle}.` : 'Текст подготовлен.');
       await collectMedia();
       state.stage = 'open composer';
-      const composer = await openComposer({unattended: !!options.scheduleRunId}); setText(composer.editor, text);
+      const composer = await openComposer({unattended: !!options.scheduleRunId || !!options.scheduledAt}); await captchaGate();setText(composer.editor, text);
       await attachPhoto(); await advanceComposer(); await attachAudio();
       state.stage = 'verify';
       const root = currentComposerRoot();
@@ -691,19 +868,25 @@
       if (!options.automatic) { log('Пост подготовлен. Проверьте автора и вложения, затем опубликуйте в VK вручную.'); return; }
       if (!authorVerified(root)) throw new Error('Не удалось подтвердить автора «Три Слога». Пост оставлен в редакторе. Проверьте автора; отправьте диагностику для настройки.');
       if (state.stopped) throw new Error('Остановлено пользователем.');
-      await message({type: 'beginPublish', jobId, photo: state.photo.id, audio: state.audio.id});
+      const submit=options.scheduledAt ? await prepareScheduledSubmission(options.scheduledAt) : one(control(root, /^Опубликовать$/u), 'кнопка публикации');
+      await message({type: 'beginPublish', jobId, photo: state.photo.id, audio: state.audio.id,scheduledAt:options.scheduledAt,batchId:state.batch?.id});
       if (state.stopped) throw new Error('Остановлено пользователем. Проверьте стену перед новой попыткой.');
       state.stage = 'publish';
-      await click(one(control(root, /^Опубликовать$/u), 'кнопка публикации'));
+      await click(submit);
       log('Публикация отправлена один раз. Проверяю результат…');
       try {
-        await until(() => all(document, '[data-testid="post"],.wall_item').find(post =>
+        if(options.scheduledAt) {
+          await until(()=>!currentComposerRoot(),'закрытие редактора после планирования',20000);
+          const pending=await openPending();
+          await until(()=>all(pending,'[data-testid="post"],.wall_item').find(post=>visible(post) &&
+            post.textContent.includes(text.split('\n')[0]) && pendingPostDate(post)===options.scheduledAt),'новая запись с выбранной датой в «Отложенные»',20000);
+        } else await until(() => all(document, '[data-testid="post"],.wall_item').find(post =>
           visible(post) && post.textContent.includes(text.split('\n')[0])), 'новая публикация на стене', 20000);
       } catch {
-        throw new Error('Результат публикации не подтверждён. Проверьте стену: пост мог появиться. Повторная отправка заблокирована.');
+        throw new Error('Результат отправки не подтверждён. Проверьте стену и «Отложенные»: пост мог появиться. Повторная отправка заблокирована.');
       }
       await message({type: 'completePublish', jobId});
-      log('Пост опубликован на стене сообщества.');
+      log(options.scheduledAt ? 'Пост сохранён в «Отложенные».' : 'Пост опубликован на стене сообщества.');
       outcome = {success: true};
     } catch (error) { outcome = {success: false, error: error.message}; log('Остановлено: ' + error.message); panel(); }
     finally {
@@ -714,13 +897,30 @@
         try { await message({type: 'scheduleResult', runId: options.scheduleRunId, ...outcome}); } catch { /* Watchdog reports an interrupted job. */ }
       }
     }
+    return outcome;
   }
 
   globalThis.TriSloga = {run, photoCandidates, audioCandidates, composerCandidates, parseSongs, chooseSongExcerpt,
     songSimilarity, matchingCommunityAudio, state, openComposer,
-    creationMenuItems, musicPicker, matchesAudio, attachAudio, attachPhoto, nativePhotoCards, currentComposerRoot, audioAttachments, photoAttachments, authorVerified};
+    creationMenuItems, musicPicker, matchesAudio, attachAudio, attachPhoto, nativePhotoCards, currentComposerRoot, audioAttachments, photoAttachments, authorVerified,
+    parsePostDate,pendingPostDate,latestPendingDate,prepareScheduledSubmission,runBatch,captchaGate,captchaVisible,dateParts};
   chrome.runtime.onMessage.addListener((options, sender, reply) => {
     if (sender.id !== chrome.runtime.id) return;
+    if(options.type==='captchaResume') {
+      if(options.batchId!==state.batch?.id || !state.captchaPaused) {reply({ok:false,error:'Нет CAPTCHA для продолжения.'});return;}
+      if(captchaVisible()) {reply({ok:false,error:'CAPTCHA ещё видна. Сначала решите её во вкладке VK.'});return;}
+      state.captchaPaused=false;
+      message({type:'batchCaptcha',batchId:state.batch.id,paused:false}).catch(()=>{});
+      reply({ok:true});return;
+    }
+    if(options.type==='batchStop') {
+      if(options.batchId && options.batchId!==state.batch?.id) {reply({ok:false,error:'Устаревшая партия.'});return;}
+      state.batchStopped=true;state.stopped=true;reply({ok:true});return;
+    }
+    if(options.type==='batchStart') {
+      if(state.batchRunning || state.running) {reply({ok:false,error:'Партия уже выполняется.'});return;}
+      reply({ok:true});runBatch(options.batch);return;
+    }
     if (options.type === 'stop') {
       if (!options.scheduleRunId || options.scheduleRunId === state.scheduleRunId) state.stopped = true;
       reply({ok: true}); return;

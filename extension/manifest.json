@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Три Слога — публикации VK",
-  "version": "0.4.8",
-  "description": "Случайное фото, песня и куплет Три слога из документа — в вашей обычной вкладке VK.",
+  "version": "0.5.0",
+  "description": "Партия отложенных постов Три слога: фото сообщества, песня и куплет из документа.",
   "permissions": ["storage", "scripting", "activeTab", "alarms", "notifications"],
   "host_permissions": [
     "https://vk.ru/*", "https://vk.com/*",

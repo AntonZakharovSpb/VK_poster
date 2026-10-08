@@ -560,7 +560,7 @@ class ExtensionTests(unittest.TestCase):
         for file in (manifest['background']['service_worker'],manifest['action']['default_popup'], 'content.js', 'popup.js', 'popup.css'):
             self.assertTrue((EXT/file).is_file(), file)
 
-    def test_popup_only_sets_interval_and_enables_schedule(self):
+    def test_popup_sets_batch_amount_and_interval_seconds(self):
         self.page.set_content((EXT/'popup.html').read_text(encoding='utf-8'))
         self.page.add_style_tag(path=str(EXT/'popup.css'))
         self.page.evaluate("""() => {
@@ -568,18 +568,19 @@ class ExtensionTests(unittest.TestCase):
           chrome.storage.onChanged={addListener:()=>{}};
           chrome.runtime.sendMessage=async msg=>{
             calls.push(msg);
-            return {ok:true,schedule:{enabled:msg.type==='scheduleSet',intervalHours:msg.intervalHours||6,nextRunAt:Date.now()+3600000}};
+            return {ok:true,batch:{enabled:msg.type==='batchStart',amount:msg.amount||10,intervalSeconds:msg.intervalSeconds||30,completed:0}};
           };
         }""")
         self.page.add_script_tag(path=str(EXT/'popup.js'))
-        self.page.locator('#interval').fill('3.5')
+        self.page.locator('#amount').fill('5')
+        self.page.locator('#interval').fill('3')
         self.page.locator('#enable').click()
-        self.page.wait_for_function("document.getElementById('status').textContent.includes('Следующая попытка')")
+        self.page.wait_for_function("document.getElementById('status').textContent.includes('из 5')")
         calls=self.page.evaluate('calls')
-        self.assertEqual(calls[-1], {'type':'scheduleSet','intervalHours':3.5})
-        self.assertEqual(self.page.locator('input').count(),1)
+        self.assertEqual(calls[-1], {'type':'batchStart','amount':5,'intervalSeconds':3})
+        self.assertEqual(self.page.locator('input').count(),2)
         self.page.locator('#disable').click()
-        self.page.wait_for_function("calls.some(c=>c.type==='scheduleStop')")
+        self.page.wait_for_function("calls.some(c=>c.type==='batchStop')")
 
     def test_background_rejects_album_discovery_without_opening_tabs(self):
         self.page.evaluate('chrome.tabs={create:()=>{throw Error("Must not open album tab")}}')
@@ -590,7 +591,7 @@ class ExtensionTests(unittest.TestCase):
         self.assertFalse(result['ok'])
         self.assertIn('Неизвестная команда',result['error'])
 
-    def test_complete_workflow_publishes_once_and_preserves_comments(self):
+    def workflow_fixture(self):
         self.content('''
           <a id="top_profile_link" href="/me">Profile</a>
           <h1 data-testid="group-name">Три Слога</h1><button data-testid="group_manage_menu_manage">Управление</button>
@@ -632,6 +633,8 @@ class ExtensionTests(unittest.TestCase):
           if(msg.type==='image') return {ok:true,base64:btoa('fake fixture bytes'),mime:'image/jpeg'};
           return {ok:true};
         }}''')
+    def test_complete_workflow_publishes_once_and_preserves_comments(self):
+        self.workflow_fixture()
         self.page.evaluate('''async()=>{await TriSloga.run({automatic:true,scheduleRunId:'scheduled-fixture'})}''')
         self.assertEqual(self.page.evaluate('window.publishCount'),1)
         self.assertFalse(self.page.evaluate('sentMessages.some(msg=>msg.type==="image")'))
@@ -669,8 +672,8 @@ class ExtensionTests(unittest.TestCase):
           chrome.storage.onChanged={addListener:()=>{}};
           chrome.runtime.sendMessage=async msg=>{
             calls.push(msg);
-            return {ok:true,schedule:{enabled:true,intervalHours:3,nextRunAt:msg.type==='scheduleRetry'?Date.now()+10800000:null},
-              scheduleStatus:msg.type==='scheduleRetry'?{running:true}:{needsFix:true,error:'VK не загрузился'}};
+            return {ok:true,batch:{enabled:true,amount:3,intervalSeconds:30,completed:0,
+              needsFix:msg.type!=='batchResume',running:msg.type==='batchResume',error:msg.type==='batchResume'?'':'VK не загрузился'}};
           };
         }''')
         self.page.add_script_tag(path=str(EXT/'popup.js'))
@@ -678,7 +681,7 @@ class ExtensionTests(unittest.TestCase):
         self.assertIn('VK не загрузился', self.page.locator('#status').inner_text())
         self.page.locator('#fixed').click()
         self.page.locator('#fixed').wait_for(state='hidden')
-        self.assertEqual(self.page.evaluate('calls.at(-1)'), {'type':'scheduleRetry','confirmNoPost':False})
+        self.assertEqual(self.page.evaluate('calls.at(-1)'), {'type':'batchResume','confirmNoPost':False})
 
     def test_stale_stop_message_does_not_cancel_new_scheduled_run(self):
         self.content('<div></div>')

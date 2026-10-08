@@ -1,136 +1,47 @@
-Три Слога — Chrome extension 0.4.8
+Три Слога — Chrome extension 0.5.0
 
-INSTALL ONCE
-1. In your NORMAL Chrome window, open chrome://extensions
-2. Enable Developer mode (Режим разработчика).
-3. Click Load unpacked (Загрузить распакованное расширение).
-4. Choose the extension folder in your downloaded or cloned project.
-5. Pin "Три Слога — публикации VK" using Chrome's Extensions menu.
+INSTALL / UPDATE
+Open chrome://extensions in your normal Chrome profile.
+Enable Developer mode, then Load unpacked and choose this extension folder.
+For an existing installation, click Reload and refresh your VK community tab.
 
 USE
-Log into VK in your normal Chrome profile.
-Open https://vk.ru/tri_sloga_band and click the extension icon.
-Choose the interval in hours (minimum 0.5) and click "Включить".
-The first post starts immediately. Later posts are attempted at that interval.
-Only the interval is configurable: song verses, photos and songs are selected
-automatically, and Publish is clicked after all attachment/author checks pass.
-The extension reuses an existing community tab. If there is no community tab,
-it opens one in the same Chrome profile; other tabs are preserved.
-The job continues in the page when the popup closes. The action log stays
-hidden during normal work and appears only when there is a problem.
-"Остановить" in the popup stops subsequent actions and disables the schedule.
-If VK ignores the automatic Create action, the scheduled job stops and
-notifies you; it does not wait for a manual click.
+Log into VK. Choose Amount (1–1000 posts) and Interval (1–86400 seconds).
+Click «Запланировать партию». Keep Chrome and the VK community tab open.
+Progress shows how many posts have been confirmed in «Отложенные».
 
-SCHEDULE AND ALERTS
-Chrome must be running and your computer awake. Each full Chrome startup with
-automation enabled immediately attempts one post and resets the countdown,
-even if the previous interval was not due. After device shutdown this happens
-when Chrome starts. A missed interval after sleep runs at most once, without
-publishing a backlog. Worker restarts do not trigger an extra post.
-Closing the last normal Chrome window pauses attempts even if Chrome keeps
-running in background mode. Reopening a normal window immediately starts
-one post and a new countdown. Opening another window while Chrome already
-has a normal window does not trigger an additional post.
-The enabled state, interval and next attempt are saved in extension storage.
-Reloading the extension resumes that schedule; it does not immediately post
-again unless an attempt is due. Changing an active interval schedules the
-next attempt from now without an additional immediate publication.
-Click "Остановить" to disable the schedule and stop subsequent job actions.
-An already submitted post cannot be recalled by Stop.
+DATE SEQUENCE
+First open «Отложенные» and read the latest scheduled date/time, loading more
+posts where necessary. Schedule the first new post one day later, preserving
+the time, then one post per following day. If there are explicitly no queued
+posts, start tomorrow at the current Moscow time. Dates use Europe/Moscow.
+Interval is the minimum pause between creating posts, not between publication dates.
+This version disables the old hourly automatic schedule.
 
-If VK cannot load within 45 seconds, a Windows notification suggests checking
-your VPN and connection. This detects a loading failure, not the VPN itself.
-Other publication errors also produce a notification. A red toolbar badge
-and the last error in the popup remain available if Windows silences alerts.
-Click a notification to open or select the community tab.
-Failure pauses automatic attempts. Fix the cause and click
-"Исправлено — повторить" in the popup, on-page error panel, or notification.
-This immediately retries and starts a fresh countdown from the retry time.
-After a loading failure the community tab is refreshed during the retry.
-If the retry fails, posting stays paused. Restarting Chrome or saving a new
-interval does not bypass a paused failure; use "Исправлено — повторить".
-If publication is uncertain, check the wall and confirm that the post is
-absent before retrying through the popup or error panel. The notification
-button does not bypass this confirmation.
-An interrupted job is reported by a 15-minute watchdog.
+CONTENT
+Choose a random song heading and verse from the shared Google document.
+Append «Три слога - <song title>». Choose a random native community photo
+from the scrolling Фото VK grid. No downloads/uploads or album tabs.
+Search music by the text's song title, prefer a similar result credited to
+Три слога, including collaborations. If absent, search a random reserve
+community song; if it cannot be matched, use the first reserve search result.
+Verify attachments and schedule through «Запланировать», not «Опубликовать».
+Confirm the post and its date in «Отложенные» before increasing progress.
 
-UPDATING AN EXISTING INSTALLATION
-Click Reload on this extension's card in chrome://extensions, then refresh
-the VK community tab. No reinstallation or new VK login is required.
+CAPTCHA
+Stop actions whenever a visible CAPTCHA is detected. Solve it yourself in VK,
+then click «ОК — продолжить» in the extension. Merely hiding/solving the
+challenge does not resume the batch. «Остановить» cancels remaining work.
 
-Photo source: the post editor's native community photo list.
-Music source: the community's Music tab. Media IDs are checked against the
-community's owner ID -220995299. Selection is random among loaded items.
-Photo attachment: after Create/Post, click "Выбрать из ВКонтакте", then
-"Фото VK". Select one random community photo from the loaded general list
-without opening albums, then click "Выбрать фотографии". Photos are selected
-only inside the editor; no community Photos-tab navigation or temporary
-photo tab is used. The popup is scrolled until loading settles (up to 30 seconds),
-then selection is random among loaded eligible items; the count is not a total
-for the community. The existing VK photo is attached natively; no image download or file upload
-is performed by the extension, and thumbnails are never reuploaded.
-Exposed photo IDs must belong to community -220995299. ID-less modern grid
-cards require the verified community editor and community photo-picker view.
-Verify selection
-and the final preview before posting; a mismatched explicit photo ID stops
-the attempt. If VK's picker is unsupported, stop and collect diagnostics
-instead of falling back to a low-resolution upload.
-Photo checks follow a replacement VK editor and report a disappearing
-editor or VK attachment error. Diagnostics include photo-picker controls.
-Audio: enter the document song title into the attachment search, without the
-artist, and choose the first result credited to Три слога, including collaborations.
-Skip other artists. If no band result appears, use a random loaded community
-track. If that reserve cannot be matched, select the first result of the reserve
-search. Verify the actual selected track, recording the original reserve in diagnostics.
-Require a similar song title too, to reject stale rows during search loading.
-If there are duplicate eligible versions, choose the first one.
-Final checks verify the selected track by ID or title, artist and duration.
-Logs show the search title and the actual selected track.
-Text: fetched from the shared Google song document on each attempt.
-Choose a random song heading, then a random verse separated by empty lines.
-If there are no verse separators, use the whole song. Append a blank line and
-"Три слога - " followed by the chosen song heading. No keyword filter is used.
-The selected heading is searched in the attachment picker, independently of
-the small initial list of community tracks.
-Keep titles formatted as headings and verses separated by empty paragraphs.
-Document URL: https://docs.google.com/document/d/1P-uauTVZ_u8GkYct3f7UN__g6pTFS8y-/edit
-Document access or parsing errors use the same pause-and-retry workflow.
+ERRORS / RESTART
+Errors show their reason and enable «Исправлено — повторить».
+An uncertain submission requires checking «Отложенные» before retrying.
+Closing the browser or VK tab pauses the batch and retains progress.
+Resume manually after checking VK. Do not close Chrome during normal work.
+Use «Скачать диагностику» if VK uses unsupported date controls or date labels.
+The date picker currently supports date/time text inputs and datetime-local;
+calendar-only interfaces may need calibration from your diagnostics.
 
-Each scheduled attempt clicks Publish ONCE after checking photo, audio and
-community author. Existing drafts are preserved and cause the attempt to stop.
-The modern settings screen uses compact song/photo previews. Song selection
-is checked in the picker first, then its final title and artist are checked.
-If the modern group editor has no author selector, its destination is checked
-from the community admin Create block that opened the dialog. An explicit
-author selector takes precedence and must identify the community.
-If a publication result is uncertain, sending again is blocked. Check the
-wall before using the panel button that permits a new attempt.
-Do not use the older Windows publisher at the same time.
-
-STATUS
-The package and browser fixture tests have been checked. End-to-end posting
-has NOT been confirmed in your normal Chrome session. VK's live editor,
-upload preview, author selector and music picker may require calibration.
-On an error the extension leaves VK open and records the failing stage.
-Click "Диагностика" in the extension popup to save tri-sloga-diagnostic.json.
-The report contains UI labels, media IDs and logs, not browser cookies or
-access tokens. Keep it private if it contains personal UI labels.
-
-CUSTOMIZE
-All source is in this folder. Edit popup.html/popup.css for the controls,
-content.js for song/verse selection and media/editor behavior, background.js for document/image fetching,
-and scheduler.js for the interval, tab loading, and notification behavior.
-After an edit, click Reload on the extension's card in chrome://extensions
-and refresh the VK tab so it uses the new content script.
-No Python, VPN, paid API or cloud AI is needed by the extension.
-Chrome does not allow ordinary unsigned extensions to be installed simply
-by double-clicking a file; the Load unpacked step is required.
-
-PERMISSIONS
-VK: operate in your community tab with your existing login.
-Google Docs: fetch the shared song document; no Google login is collected.
-Local extension storage: schedule, status, operation lock and diagnostics.
-Alarms: wake the extension worker for scheduled attempts and the watchdog.
-Notifications: report failed or interrupted attempts to Windows.
-The extension does not read browser cookie APIs or store your password.
+TESTING
+Automated tests use simulated offline VK pages only. They never create real
+posts. Actual VK controls can vary; unsupported controls stop safely.

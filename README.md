@@ -1,72 +1,38 @@
 # Три Слога — VK publisher
 
-Editable Chrome extension for https://vk.ru/tri_sloga_band, with an earlier Windows desktop prototype included in `app.py`.
+Chrome extension for https://vk.ru/tri_sloga_band. Version 0.5.0 creates a finite batch of scheduled posts instead of publishing periodically.
 
-The extension uses your existing Chrome VK login. First it reads the [song document](https://docs.google.com/document/d/1P-uauTVZ_u8GkYct3f7UN__g6pTFS8y-/edit), selects a random song heading and a random verse separated by empty lines (or the complete lyrics if there is only one section), and adds `Три слога - <song name>` beneath it. It then chooses a random loaded community photo, searches the music attachment picker for the selected song title, and attaches the first result credited to Три слога. If no such artist appears, it falls back to a random loaded community track. Choose an interval in hours and enable automatic publication: the first post starts immediately, then subsequent attempts follow the saved schedule.
+## Use
 
-The document must remain accessible through its shared HTML export. Use headings for song titles and empty paragraphs between verses; changes to the document are fetched for each post. A document/network/parsing failure uses the existing error pause and Fixed/retry workflow. No love/happiness keyword filter or Wikiquote fetch remains in the extension. The older desktop prototype still uses its original quote logic.
+1. Reload the extension in chrome://extensions and refresh the VK community tab.
+2. Choose **Amount** (number of posts) and **Interval** (seconds to wait between creating posts).
+3. Click **Запланировать партию**. Keep Chrome and the VK tab open until it finishes.
 
-## Install
+The extension opens **Отложенные**, loads the list and finds the latest scheduled date. The first new post is scheduled one day later, preserving the time of day. Each subsequent post is scheduled on the next day. If the queue is explicitly empty, the first post is scheduled tomorrow at the current Moscow time. Dates are handled in Europe/Moscow, including month/year rollover.
 
-1. Download or clone this repository.
-2. Open `chrome://extensions` in your normal Chrome profile and enable Developer mode.
-3. Click **Load unpacked** and select this repository's `extension` folder.
-4. Log into VK, open the community, and click the extension icon.
+It reads the shared [song document](https://docs.google.com/document/d/1P-uauTVZ_u8GkYct3f7UN__g6pTFS8y-/edit), chooses a random song and a random verse, and appends `Три слога - <song title>`. Photos are selected natively in **Выбрать из ВКонтакте → Фото VK**, scrolling the community grid to load more. No thumbnail download/upload or album tabs are used.
 
-Choose the interval and click **Включить**. **Остановить** disables the schedule and stops subsequent actions in the running job. Changing an active interval reschedules the next attempt without an extra immediate post. Full instructions and known limitations are in [extension/INSTALL.txt](extension/INSTALL.txt). Browser fixture tests cover the scheduler and publishing interface; successful live publication still needs confirmation in the user's Chrome session.
+Music search uses the document title and selects the first similar title credited to **Три слога**, including collaborations. If none appears, it searches for a random community reserve song. If the reserve cannot be matched, it selects the first reserve search result. Duplicate versions use the first eligible row.
 
-Chrome must be running and the computer awake. Whenever Chrome starts with automation enabled, the extension immediately attempts one post and starts a fresh interval, even if the previous interval was not due. This also works when the last normal Chrome window is closed and reopened while Chrome continues running in background mode. Device shutdown is handled when Chrome next starts. Ordinary service-worker restarts and extension reloads restore the saved countdown without an extra post; missed intervals after sleep produce at most one attempt, without a backlog.
+The final action uses **Запланировать**, verifies the date/time inputs, and confirms the resulting post and date in **Отложенные**. The normal batch flow never clicks **Опубликовать**. Progress is saved after each confirmed scheduled post; the next post starts after Interval seconds. Browser throttling or sleep can lengthen this pause.
 
-A failed attempt pauses the countdown and shows the reason through a Windows notification, red toolbar badge, and popup status. Correct the problem and click **Исправлено — повторить** in the popup, error panel, or notification to retry immediately and restart the interval. A loading failure refreshes the existing community tab on retry. A failed retry stays paused; changing the interval or restarting Chrome does not bypass a paused error. VPN advice is a connection troubleshooting hint, not VPN detection. OS notification settings may suppress notifications; popup status and the badge remain available.
+## CAPTCHA and recovery
 
-The on-page action log stays hidden during normal work and appears only if an error occurs. The VK editor itself still opens while the extension creates the post.
+A visible CAPTCHA pauses actions and shows a notification and **ОК — продолжить** in the extension. Solve the challenge yourself in VK, then click that button. Closing the challenge alone does not resume actions. CAPTCHA waiting does not consume ordinary interface timeouts. **Остановить** cancels the remaining batch.
 
-An uncertain Publish result blocks further sending until you check the wall and confirm that the post is absent using the popup or error panel. The notification button cannot bypass that confirmation. A closed tab or interrupted job is reported by a 15-minute watchdog. The extension preserves existing drafts and stops rather than overwriting them.
+Errors pause the batch with diagnostics and **Исправлено — повторить**. If a submission is uncertain, check **Отложенные** before authorizing a new attempt. Closing/restarting the browser or closing the VK tab pauses an unfinished batch; progress is retained. Resume manually after checking VK. This version disables the previous hourly schedule.
 
-Scheduling uses [Chrome alarms](https://developer.chrome.com/docs/extensions/reference/api/alarms); Chrome may delay alarms, so intervals are best-effort rather than exact deadlines.
+VK controls vary by account and interface version. Unsupported date-picker controls or unreadable scheduled dates stop the batch and produce diagnostics rather than choosing an unverified date. The current selectors require date/time input fields; live account calibration may be needed for a calendar-only picker. Download diagnostics from the popup if it stops.
 
-## Customize
+## Project
 
-Photos are selected inside the post editor: **Выбрать из ВКонтакте → Фото VK →
-random community photo from the loaded general list → Выбрать фотографии**.
-The popup is scrolled to load more photos until loading settles, for up to 30
-seconds. Selection is random among the loaded photos, which may be fewer than
-the community's total. No albums or separate photo tabs are opened. The existing photo is attached natively;
-thumbnails are not downloaded and reuploaded. Unsupported picker controls stop
-the attempt and produce diagnostics; there is no thumbnail-upload fallback.
+- `extension/content.js`: media selection, queue/date inspection, scheduling and CAPTCHA pause.
+- `extension/batch.js`: batch settings, tab dispatch, saved progress and notifications.
+- `extension/background.js`: document fetching and submission guards.
+- `extension/popup.*`: Amount, Interval, progress and recovery controls.
+- `extension/scheduler.js`: previous hourly scheduler retained for reference, not loaded by 0.5.0.
+- `app.py`: earlier desktop prototype, not the active extension.
 
-Music selection enters the document song title into the attachment search and
-chooses the first result credited to Три слога (including collaborations).
-Other artists are skipped. If no band result appears, it uses the random
-community track reserved at the start. If that reserve cannot be matched in
-search, choose the first result from the reserve search instead. Final checks
-verify the track actually selected.
-Search results must also have a similar title, so stale unrelated band rows
-cannot be selected while VK refreshes the list. Duplicate eligible versions
-use the first row. Browser tests use simulated search responses, not the live
-VK catalogue, and never publish to the real community.
+All automated tests use offline browser fixtures and never publish or schedule real VK posts. Run `python -m unittest discover -v`.
 
-- `extension/content.js`: VK interface automation and attachment checks.
-- `extension/background.js`: document fetching and publication protection.
-- `extension/scheduler.js`: scheduling, community tab loading, notifications, and interrupted-job detection.
-- `extension/popup.js`, `popup.html`, `popup.css`: controls and preferences.
-
-After editing, reload the extension in `chrome://extensions` and refresh the community tab. VK interface changes can require further calibration. Selection is among loaded media; it is not a uniform sample of all community media. No VPN service is used; site availability depends on your connection.
-
-## Tests and desktop prototype
-
-Python and installed Google Chrome are required for browser tests:
-
-```powershell
-python -m pip install -r requirements.txt
-python -m unittest test_scheduler test_extension test_login test_composer
-```
-
-For the older desktop prototype, see [README.txt](README.txt). Build it with:
-
-```powershell
-python -m pip install pyinstaller
-python -m PyInstaller --noconfirm --windowed --onedir --name TriSlogaPublisher app.py
-```
-
-Browser profiles, diagnostics, local inspection scripts, and generated packages are excluded from version control.
+Changes stay on review branches until the user approves merging. Browser profiles, credentials, diagnostics and generated ZIPs are excluded from Git.
