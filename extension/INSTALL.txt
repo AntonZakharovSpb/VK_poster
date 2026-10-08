@@ -1,4 +1,4 @@
-Три Слога — Chrome extension 0.4.3
+Три Слога — Chrome extension 0.4.4
 
 INSTALL ONCE
 1. In your NORMAL Chrome window, open chrome://extensions
@@ -66,10 +66,13 @@ Photo attachment: after Create/Post, click "Выбрать из ВКонтакт
 "Фото VK". Select one random community photo from the loaded general list
 without opening albums, then click "Выбрать фотографии". Photos are selected
 only inside the editor; no community Photos-tab navigation or temporary
-photo tab is used. Random selection is among currently loaded eligible items.
-The existing VK photo is attached by its ID; no image download or file upload
+photo tab is used. The popup is scrolled until loading settles (up to 30 seconds),
+then selection is random among loaded eligible items; the count is not a total
+for the community. The existing VK photo is attached natively; no image download or file upload
 is performed by the extension, and thumbnails are never reuploaded.
-Only photo IDs owned by community -220995299 are eligible. Verify selection
+Exposed photo IDs must belong to community -220995299. ID-less modern grid
+cards require the verified community editor and community photo-picker view.
+Verify selection
 and the final preview before posting; a mismatched explicit photo ID stops
 the attempt. If VK's picker is unsupported, stop and collect diagnostics
 instead of falling back to a low-resolution upload.

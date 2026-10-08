@@ -290,9 +290,35 @@
     if (inner.length > 1) throw new Error('Открыто несколько окон выбора фотографии.');
     return inner[0];
   }
+  async function loadPhotoGrid() {
+    const started = Date.now();
+    let stable = 0, previous = '';
+    while (Date.now() - started < 30000) {
+      if (state.stopped) throw new Error('Остановлено пользователем.');
+      const picker = nativePhotoPicker();
+      const cards = picker ? nativePhotoCards(picker) : [];
+      if (!cards.length) return cards;
+      let scroll = cards[cards.length - 1].card.parentElement;
+      while (scroll && !(scroll.scrollHeight > scroll.clientHeight + 2 && /auto|scroll/u.test(getComputedStyle(scroll).overflowY))) scroll = scroll.parentElement;
+      if (!scroll) return cards;
+      scroll.scrollTop = scroll.scrollHeight;
+      scroll.dispatchEvent(new Event('scroll', {bubbles:true}));
+      cards[cards.length - 1].card.scrollIntoView({block:'end'});
+      await delay(700);
+      const live = nativePhotoPicker();
+      const loaded = live ? nativePhotoCards(live) : [];
+      const signature = `${loaded.length}:${scroll.scrollHeight}`;
+      stable = signature === previous ? stable + 1 : 0;
+      previous = signature;
+      if (stable >= 4) return loaded;
+    }
+    const picker = nativePhotoPicker();
+    return picker ? nativePhotoCards(picker) : [];
+  }
   function nativePhotoPreviews(root) {
     if (!root) return [];
-    const candidates = all(root, '[data-attachment-type="photo"],.page_preview_photo,[data-testid="primary-attachment-photo"],[data-testid="post-editor-photo"],[data-testid="photo-attachment"],[data-testid="posting_preview_attachment_item"]')
+    const candidates = all(root, '[data-attachment-type="photo"],.page_preview_photo,[data-testid="primary-attachment-photo"],[data-testid="post-editor-photo"],[data-testid="photo-attachment"],[data-testid="posting_preview_attachment_item"],[data-testid="posting_attachment_item"]')
+      .filter(el => el.dataset.testid !== 'posting_attachment_item' || !!el.querySelector('[data-testid="posting_attachment_photo_item_remove"]'))
       .filter(visible).filter(el => !el.querySelector('video,[data-attachment-type="video"]'));
     return candidates.filter(el => !candidates.some(other => other !== el && other.contains(el)))
       .filter(el => {
@@ -318,11 +344,13 @@
     let picker = await until(nativePhotoPicker, 'окно выбора фотографии из VK');
     const group = control(picker, /^Три Слога$/iu).filter(visible);
     if (group.length === 1) { await click(group[0]); await delay(400); }
-    const cards = await until(() => {
+    let cards = await until(() => {
       const current = nativePhotoPicker();
       const loaded = current ? nativePhotoCards(current) : [];
       return loaded.length ? loaded : null;
     }, 'фотографии сообщества в общем списке Фото VK');
+    cards = await loadPhotoGrid();
+    if (!cards.length) throw new Error('Список фотографий VK исчез после прокрутки.');
     const chosen = cards[Math.floor(Math.random() * cards.length)];
     state.photo = {id: chosen.id, nativeGrid: !!chosen.nativeGrid,
       url: chosen.nativeGrid ? null : `${location.origin}/photo${chosen.id}`};
@@ -575,7 +603,7 @@
   }
   function diagnostics(error = '') {
     const scope = currentComposerRoot() || document;
-    return {version: '0.4.3', time: new Date().toISOString(), stage: state.stage, error,
+    return {version: '0.4.4', time: new Date().toISOString(), stage: state.stage, error,
       page: location.origin + location.pathname + location.hash,
       photo: state.photo?.id, audio: state.audio?.id, sourceAudio: state.sourceAudio,
       songTitle: state.songTitle,

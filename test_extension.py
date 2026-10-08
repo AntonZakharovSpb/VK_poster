@@ -287,7 +287,7 @@ class ExtensionTests(unittest.TestCase):
           card.onclick=()=>{card.setAttribute('aria-selected','true');document.getElementById('done').disabled=false};
           document.getElementById('done').onclick=()=>{
             if(card.getAttribute('aria-selected')!=='true') throw Error('No selected photo');
-            document.getElementById('editor').insertAdjacentHTML('beforeend','<div class=page_preview_photo data-photo-id=-220995299_123>Native photo</div>');
+            document.getElementById('editor').insertAdjacentHTML('beforeend','<div data-testid=posting_attachment_item><img width=100 height=100><button data-testid=posting_attachment_photo_item_remove>Удалить</button></div>');
             picker.hidden=true;
           };
         }''')
@@ -295,6 +295,37 @@ class ExtensionTests(unittest.TestCase):
         self.assertTrue(self.page.evaluate('TriSloga.state.photoAttached'))
         self.assertTrue(self.page.evaluate('TriSloga.state.photo.nativeGrid'))
         self.assertEqual(self.page.evaluate('TriSloga.photoAttachments(TriSloga.currentComposerRoot()).length'),1)
+
+    def test_photo_grid_scroll_loads_more_before_selection(self):
+        self.native_photo_fixture('')
+        self.page.evaluate('''()=>{
+          TriSloga.state.communityContext=true;
+          const picker=document.getElementById('photoPicker');
+          picker.style.cssText='height:100px;overflow:auto';
+          picker.innerHTML=`<span data-testid=posting_photo_picker_switch_owner>К моим фото</span>
+            <div data-testid=posting_photo_picker_photos_item style="height:200px">Photo</div><button id=done>Выбрать фотографии</button>`;
+          window.loadedMore=false;
+          picker.addEventListener('scroll',()=>{
+            if(window.loadedMore) return;
+            window.loadedMore=true;
+            for(let i=0;i<30;i++) {
+              const card=document.createElement('div');card.dataset.testid='posting_photo_picker_photos_item';
+              card.style.height='50px';card.textContent='More photo';picker.insertBefore(card,document.getElementById('done'));
+            }
+          });
+          picker.onclick=e=>{if(e.target.dataset.testid==='posting_photo_picker_photos_item') window.selectedAfterLoading=window.loadedMore};
+          document.getElementById('done').onclick=()=>{
+            document.getElementById('editor').insertAdjacentHTML('beforeend','<div data-testid=posting_attachment_item><button data-testid=posting_attachment_photo_item_remove>Remove</button></div>');picker.hidden=true;
+          };
+        }''')
+        self.page.evaluate('TriSloga.attachPhoto()')
+        self.assertTrue(self.page.evaluate('window.selectedAfterLoading'))
+        self.assertTrue(self.page.evaluate('TriSloga.state.logs.some(line=>line.includes("31"))'))
+
+    def test_nonphoto_attachment_item_does_not_count_as_photo(self):
+        self.content('<div id=root><div data-testid=posting_attachment_item>Audio</div></div>')
+        self.page.evaluate("TriSloga.state.photo={id:'community-grid:0',nativeGrid:true};TriSloga.state.photoAttached=true;TriSloga.state.photoSelectionVerified='community-grid:0'")
+        self.assertEqual(self.page.evaluate('TriSloga.photoAttachments(document.getElementById("root")).length'),0)
 
     def test_idless_grid_requires_community_context_and_owner_switch(self):
         self.content('''<div id=picker><span data-testid=posting_photo_picker_switch_owner>К моим фото</span>

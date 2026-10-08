@@ -29,7 +29,9 @@ Scheduling uses [Chrome alarms](https://developer.chrome.com/docs/extensions/ref
 
 Photos are selected inside the post editor: **Выбрать из ВКонтакте → Фото VK →
 random community photo from the loaded general list → Выбрать фотографии**.
-No albums or separate photo tabs are opened. The existing photo ID is attached;
+The popup is scrolled to load more photos until loading settles, for up to 30
+seconds. Selection is random among the loaded photos, which may be fewer than
+the community's total. No albums or separate photo tabs are opened. The existing photo is attached natively;
 thumbnails are not downloaded and reuploaded. Unsupported picker controls stop
 the attempt and produce diagnostics; there is no thumbnail-upload fallback.
 
