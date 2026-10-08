@@ -507,14 +507,14 @@
       try { row = await until(() => selectedAudioRow(picker), 'точная песня в поиске', 3000); }
       catch (error) {
         if (state.stopped) throw error;
-        row = state.songTitle ? null : firstSearchAudio(picker);
+        row = firstSearchAudio(picker);
         if (!row) {
           const baseTitle = state.audio.title.replace(/\s*[\[(].*?[\])]\s*/gu, ' ')
             .replace(/\s*(?:[-–—]\s*)?(?:альбомная|альбомный|сингловая|сингловый|album|single)\s*(?:версия|version)?\s*$/iu, '').trim();
           Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(search, `${state.audio.artist} ${baseTitle}`.trim());
           search.dispatchEvent(new Event('input', {bubbles: true}));
           await delay(1200);
-          row = await until(() => selectedAudioRow(picker) || (!state.songTitle && firstSearchAudio(picker)), 'результаты поиска песни сообщества');
+          row = await until(() => selectedAudioRow(picker) || firstSearchAudio(picker), 'результаты поиска резервной песни');
         }
         const chosen = audioMetadata(row);
         state.sourceAudio = {...state.audio};
@@ -630,7 +630,7 @@
   }
   function diagnostics(error = '') {
     const scope = currentComposerRoot() || document;
-    return {version: '0.4.7', time: new Date().toISOString(), stage: state.stage, error,
+    return {version: '0.4.8', time: new Date().toISOString(), stage: state.stage, error,
       page: location.origin + location.pathname + location.hash,
       photo: state.photo?.id, audio: state.audio?.id, sourceAudio: state.sourceAudio,
       songTitle: state.songTitle,

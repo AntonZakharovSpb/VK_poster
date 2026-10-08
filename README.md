@@ -38,8 +38,9 @@ the attempt and produce diagnostics; there is no thumbnail-upload fallback.
 Music selection enters the document song title into the attachment search and
 chooses the first result credited to Три слога (including collaborations).
 Other artists are skipped. If no band result appears, it uses the random
-community track reserved at the start. Final checks verify the selected track;
-fallback attachment must match the reserved community track.
+community track reserved at the start. If that reserve cannot be matched in
+search, choose the first result from the reserve search instead. Final checks
+verify the track actually selected.
 Search results must also have a similar title, so stale unrelated band rows
 cannot be selected while VK refreshes the list. Duplicate eligible versions
 use the first row. Browser tests use simulated search responses, not the live

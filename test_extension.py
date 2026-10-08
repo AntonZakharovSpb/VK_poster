@@ -222,6 +222,36 @@ class ExtensionTests(unittest.TestCase):
                 print(json.dumps({'chosen_title':title,'attached_artist':self.page.evaluate('TriSloga.state.audio.artist'),
                                   'attached_title':self.page.evaluate('TriSloga.state.audio.title')},ensure_ascii=True))
 
+    def test_reserve_search_uses_first_result_without_id_or_version_suffix(self):
+        self.content('''<div id=editor data-testid=posting_modal_box role=dialog>
+          <div contenteditable=true></div><button onclick="picker.hidden=false">Музыка</button></div>
+          <div id=picker role=dialog hidden><input data-testid=posting_audio_search_audio_input placeholder="Поиск музыки">
+          <div id=rows hidden><div data-testid=posting_audio_audio_track_row>
+            <span data-testid=music-cell-title>Бродский</span><span data-testid=music-cell-artists>Три слога</span><span>3:09</span><input type=checkbox>
+          </div><div data-testid=posting_audio_audio_track_row>
+            <span data-testid=music-cell-title>Бродский</span><span data-testid=music-cell-artists>Три слога</span><span>2:57</span><input type=checkbox>
+          </div></div><button id=done>Готово</button></div>''')
+        self.page.evaluate('''()=>{
+          window.queries=[];
+          TriSloga.state.songTitle='Дорога';
+          TriSloga.state.audio={id:'-220995299_456239149',title:'Бродский версия 2026',artist:'Три слога',duration:'3:09'};
+          TriSloga.state.composer={root:document.getElementById('editor'),editor:document.querySelector('[contenteditable]'),modern:true};
+          document.querySelector('[data-testid=posting_audio_search_audio_input]').oninput=e=>{
+            queries.push(e.target.value);rows.hidden=e.target.value==='Дорога';
+          };
+          document.getElementById('done').onclick=()=>{
+            if(!rows.querySelector('input').checked) throw Error('First result not selected');
+            editor.insertAdjacentHTML('beforeend','<div data-testid=posting_audio_select_audio_selected><span data-testid=posting_audio_select_audio_selected_title>Бродский</span><span>Три слога</span></div>');picker.hidden=true;
+          };
+        }''')
+        self.page.evaluate('TriSloga.attachAudio()')
+        self.assertEqual(self.page.evaluate('window.queries'),['Дорога','Три слога Бродский версия 2026'])
+        self.assertEqual(self.page.evaluate('TriSloga.state.audio.title'),'Бродский')
+        self.assertEqual(self.page.evaluate('TriSloga.state.sourceAudio.id'),'-220995299_456239149')
+        self.assertTrue(self.page.locator('#rows input').first.is_checked())
+        self.assertFalse(self.page.locator('#rows input').nth(1).is_checked())
+        self.assertEqual(self.page.evaluate('TriSloga.audioAttachments(TriSloga.currentComposerRoot()).length'),1)
+
     def test_album_version_falls_back_to_first_search_result_and_verifies_attachment(self):
         self.content('''<div id="editor" data-testid="posting_modal_box" role="dialog">
           <div contenteditable="true"></div><button onclick="picker.hidden=false">Музыка</button></div>

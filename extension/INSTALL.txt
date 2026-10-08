@@ -1,4 +1,4 @@
-Три Слога — Chrome extension 0.4.7
+Три Слога — Chrome extension 0.4.8
 
 INSTALL ONCE
 1. In your NORMAL Chrome window, open chrome://extensions
@@ -81,7 +81,8 @@ editor or VK attachment error. Diagnostics include photo-picker controls.
 Audio: enter the document song title into the attachment search, without the
 artist, and choose the first result credited to Три слога, including collaborations.
 Skip other artists. If no band result appears, use a random loaded community
-track and verify that exact fallback instead of accepting an unrelated result.
+track. If that reserve cannot be matched, select the first result of the reserve
+search. Verify the actual selected track, recording the original reserve in diagnostics.
 Require a similar song title too, to reject stale rows during search loading.
 If there are duplicate eligible versions, choose the first one.
 Final checks verify the selected track by ID or title, artist and duration.
