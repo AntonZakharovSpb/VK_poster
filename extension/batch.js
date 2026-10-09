@@ -94,8 +94,20 @@ async function batchLaunch(id) {
     });
   }
 }
+const UNCONFIRMED_WARNING='Последняя отправка не подтверждена: запись могла попасть в «Отложенные». Партия остановлена без повторной отправки. Можно начать новую партию; её даты будут прочитаны из VK.';
+async function finishUnconfirmedBatch(force=false) {
+  const {batch,publicationAttempt,activeJob}=await chrome.storage.local.get(['batch','publicationAttempt','activeJob']);
+  if(publicationAttempt?.status!=='pending' || publicationAttempt.batchId!==batch?.id ||
+      !Number.isFinite(publicationAttempt.scheduledAt) || (!force && batch.enabled && batch.running))return false;
+  await chrome.storage.local.set({publicationAttempt:{...publicationAttempt,status:'unconfirmed'},
+    batch:{...batch,enabled:false,running:false,captcha:false,needsFix:false,done:false,unconfirmed:true,error:UNCONFIRMED_WARNING}});
+  if(activeJob?.id===publicationAttempt.jobId)await chrome.storage.local.remove('activeJob');
+  return true;
+}
 async function batchCommand(message,sender) {
-  if(message.type==='batchStatus') return chrome.storage.local.get(['batch','publicationAttempt']);
+  if(message.type==='batchStatus') return batchSerial(async()=>{
+    await finishUnconfirmedBatch();return chrome.storage.local.get(['batch','publicationAttempt']);
+  });
   if(message.type==='pendingInspect') {
     const {batch}=await chrome.storage.local.get('batch');
     if(!batch?.enabled||batch.id!==message.batchId||batch.tabId!==sender.tab?.id)throw new Error('Устаревший сеанс партии.');
@@ -106,6 +118,7 @@ async function batchCommand(message,sender) {
     if(!Number.isInteger(amount)||amount<1||amount>1000) throw new Error('Количество: целое число от 1 до 1000.');
     if(!Number.isFinite(intervalSeconds)||intervalSeconds<1||intervalSeconds>86400) throw new Error('Интервал: от 1 до 86400 секунд.');
     const id=await batchSerial(async()=>{
+      await finishUnconfirmedBatch();
       const {batch,publicationAttempt,activeJob}=await chrome.storage.local.get(['batch','publicationAttempt','activeJob']);
       if(batch?.enabled) throw new Error('Сначала остановите или завершите текущую партию.');
       if(activeJob?.expires>Date.now()) throw new Error('Предыдущая попытка ещё завершается.');
@@ -174,6 +187,7 @@ async function batchCommand(message,sender) {
       await chrome.action.setBadgeText({text:''});return {};
     }
     if(message.type==='batchError') {
+      if(await finishUnconfirmedBatch(true)) {await batchNotify(UNCONFIRMED_WARNING);return {};}
       await chrome.storage.local.set({batch:{...batch,running:false,needsFix:true,captcha:false,error:String(message.error)}});
       await batchNotify(String(message.error));return {};
     }

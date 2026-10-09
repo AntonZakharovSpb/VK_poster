@@ -582,6 +582,20 @@ class ExtensionTests(unittest.TestCase):
         self.page.locator('#disable').click()
         self.page.wait_for_function("calls.some(c=>c.type==='batchStop')")
 
+    def test_popup_unconfirmed_batch_allows_new_start_without_retry_button(self):
+        self.page.set_content((EXT/'popup.html').read_text(encoding='utf-8'))
+        self.page.evaluate('''()=>{
+          chrome.storage.onChanged={addListener:()=>{}};
+          chrome.runtime.sendMessage=async()=>({ok:true,batch:{enabled:false,running:false,unconfirmed:true,
+            amount:5,completed:4,intervalSeconds:60,error:'Последняя отправка не подтверждена. Можно начать новую партию.'},
+            publicationAttempt:{status:'unconfirmed'}});
+        }''')
+        self.page.add_script_tag(path=str(EXT/'popup.js'))
+        self.page.wait_for_function("document.getElementById('status').textContent.includes('Подтверждено: 4 из 5')")
+        self.assertTrue(self.page.locator('#enable').is_enabled())
+        self.assertTrue(self.page.locator('#fixed').is_hidden())
+        self.assertTrue(self.page.locator('#amount').is_enabled())
+
     def test_background_rejects_album_discovery_without_opening_tabs(self):
         self.page.evaluate('chrome.tabs={create:()=>{throw Error("Must not open album tab")}}')
         self.page.add_script_tag(path=str(EXT/'background.js'))

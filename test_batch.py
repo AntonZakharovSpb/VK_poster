@@ -336,6 +336,57 @@ class BatchBackgroundTests(unittest.TestCase):
         error=self.page.evaluate("async()=>{try{await batchCommand({type:'batchResume'},{})}catch(e){return e.message}}")
         self.assertIn('Отложенные',error)
 
+    def test_unconfirmed_last_submission_finishes_batch_without_retry(self):
+        self.start(amount=5)
+        self.page.evaluate('''()=>{
+          store.batch.completed=4;store.batch.lastDate=1791877140000;
+          store.publicationAttempt={status:'pending',batchId:store.batch.id,jobId:'last-job',scheduledAt:1791963540000};
+          store.activeJob={id:'last-job',expires:Date.now()+900000};
+        }''')
+        self.page.evaluate("batchCommand({type:'batchError',batchId:store.batch.id,error:'Unconfirmed'},{tab:{id:7}})")
+        self.assertEqual(self.page.evaluate('store.publicationAttempt.status'),'unconfirmed')
+        self.assertFalse(self.page.evaluate('store.batch.enabled'))
+        self.assertFalse(self.page.evaluate('store.batch.needsFix'))
+        self.assertEqual(self.page.evaluate('store.batch.completed'),4)
+        self.assertEqual(self.page.evaluate('calls.filter(c=>c.type==="batchStart").length'),1)
+        self.assertFalse(self.page.evaluate('!!store.activeJob'))
+        self.start(amount=2)
+        self.assertEqual(self.page.evaluate('store.batch.completed'),0)
+        self.assertEqual(self.page.evaluate('calls.filter(c=>c.type==="inspectPending").length'),2)
+        self.assertEqual(self.page.evaluate('calls.filter(c=>c.type==="batchStart").length'),2)
+
+    def test_status_recovers_old_disabled_pending_batch(self):
+        self.start(amount=5)
+        self.page.evaluate('''()=>{
+          store.batch.enabled=false;store.batch.running=false;store.batch.completed=4;
+          store.publicationAttempt={status:'pending',batchId:store.batch.id,jobId:'last-job',scheduledAt:1791963540000};
+        }''')
+        result=self.page.evaluate("batchCommand({type:'batchStatus'},{})")
+        self.assertTrue(result['batch']['unconfirmed'])
+        self.assertEqual(result['batch']['completed'],4)
+        self.assertEqual(result['publicationAttempt']['status'],'unconfirmed')
+        self.assertIn('Можно начать новую',result['batch']['error'])
+        self.start()
+
+    def test_new_start_recovers_old_paused_pending_batch_without_status_read(self):
+        self.start()
+        self.page.evaluate('''()=>{
+          store.batch.running=false;
+          store.publicationAttempt={status:'pending',batchId:store.batch.id,scheduledAt:1791963540000};
+        }''')
+        self.start(amount=2)
+        self.assertEqual(self.page.evaluate('store.batch.amount'),2)
+        self.assertEqual(self.page.evaluate('store.publicationAttempt.status'),'unconfirmed')
+
+    def test_status_does_not_release_running_submission_or_foreign_attempt(self):
+        self.start()
+        self.page.evaluate("store.publicationAttempt={status:'pending',batchId:store.batch.id,scheduledAt:1791963540000}")
+        self.page.evaluate("batchCommand({type:'batchStatus'},{})")
+        self.assertEqual(self.page.evaluate('store.publicationAttempt.status'),'pending')
+        self.page.evaluate("store.batch.enabled=false;store.batch.running=false;store.publicationAttempt.batchId='another-batch'")
+        error=self.page.evaluate("async()=>{try{await batchCommand({type:'batchStart',amount:1,intervalSeconds:1},{})}catch(e){return e.message}}")
+        self.assertIn('не подтверждена',error)
+
     def test_captcha_resume_sends_message_to_same_page_without_new_start(self):
         self.start()
         self.page.evaluate("batchCommand({type:'batchCaptcha',batchId:store.batch.id,paused:true},{tab:{id:7}})")

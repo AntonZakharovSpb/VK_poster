@@ -15,8 +15,8 @@ function render({batch,publicationAttempt}) {
   disable.disabled=!batch?.enabled;
   fixed.hidden=!batch?.enabled||!batch?.needsFix||!!batch?.captcha;
   captcha.hidden=!batch?.captcha;
-  const lines=[batch?.done?'Партия завершена.':batch?.enabled?'Партия запущена.':'Партия не запущена.'];
-  if(batch?.amount)lines.push(`Запланировано: ${batch.completed||0} из ${batch.amount}.`);
+  const lines=[batch?.unconfirmed?'Партия остановлена. Можно начать новую.':batch?.done?'Партия завершена.':batch?.enabled?'Партия запущена.':'Партия не запущена.'];
+  if(batch?.amount)lines.push(`${batch.unconfirmed?'Подтверждено':'Запланировано'}: ${batch.completed||0} из ${batch.amount}.`);
   if(batch?.lastDate)lines.push('Последняя дата: '+new Date(batch.lastDate).toLocaleString('ru-RU',{timeZone:'Europe/Moscow'})+' (Москва).');
   if(batch?.captcha)lines.push('Решите CAPTCHA во вкладке VK и нажмите «ОК — продолжить».');
   else if(batch?.error)lines.push(batch.error);

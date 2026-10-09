@@ -655,7 +655,7 @@
   }
   function diagnostics(error = '') {
     const scope = currentComposerRoot() || document;
-    return {version: '0.5.3', time: new Date().toISOString(), stage: state.stage, error,
+    return {version: '0.5.4', time: new Date().toISOString(), stage: state.stage, error,
       batch:state.batch ? {id:state.batch.id,amount:state.batch.amount,completed:state.batch.completed,intervalSeconds:state.batch.intervalSeconds} : null,
       plannedAt:state.plannedAt,captchaPaused:!!state.captchaPaused,
       scheduledPostHeaders:scheduledPosts(document).slice(0,40).map(post=>({id:post.id,
@@ -988,6 +988,7 @@
         } else await until(() => all(document, '[data-testid="post"],.wall_item').find(post =>
           visible(post) && post.textContent.includes(text.split('\n')[0])), 'новая публикация на стене', 20000);
       } catch {
+        if(options.scheduledAt && state.batch)throw new Error('Результат отправки не подтверждён: запись могла попасть в «Отложенные». Партия остановлена без повторной отправки. Можно начать новую партию.');
         throw new Error('Результат отправки не подтверждён. Проверьте стену и «Отложенные»: пост мог появиться. Повторная отправка заблокирована.');
       }
       await message({type: 'completePublish', jobId});
