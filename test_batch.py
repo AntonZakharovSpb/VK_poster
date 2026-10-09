@@ -128,6 +128,16 @@ class BatchPageTests(unittest.TestCase):
         self.assertTrue(response['ok'])
         self.assertTrue(response['found'])
 
+    def test_inspection_normalizes_whitespace_and_records_mismatch_details(self):
+        self.content('''<div id=post-220995299_1><span class=post_date>15 окт 2026 в 10:39</span><p>Текст   первой\n строки</p></div>''')
+        self.page.evaluate("history.replaceState(null,'','/wall-220995299?postponed=1')")
+        response=self.page.evaluate('''()=>new Promise(resolve=>testListeners[0]({type:'inspectPending',batch:{id:'fixture'},text:'Текст первой строки',date:1792049940000},{id:'test-extension'},resolve))''')
+        self.assertTrue(response['found'])
+        self.assertTrue(response['verification']['observed'][0]['textMatches'])
+        response=self.page.evaluate('''()=>new Promise(resolve=>testListeners[0]({type:'inspectPending',batch:{id:'fixture'},text:'Текст первой строки',date:1792136340000},{id:'test-extension'},resolve))''')
+        self.assertFalse(response['found'])
+        self.assertEqual(response['verification']['observed'][0]['date'],1792049940000)
+
     def test_empty_queue_is_explicit_and_unreadable_queue_stops(self):
         self.content('<button>Отложенные</button><div data-testid=scheduled-posts>Нет отложенных записей</div>')
         self.assertIsNone(self.page.evaluate('TriSloga.latestPendingDate()'))
@@ -177,6 +187,23 @@ class BatchPageTests(unittest.TestCase):
         self.assertEqual(self.page.evaluate('beginAttempts.length'),3)
         self.assertGreaterEqual(saved[1]['time']-saved[0]['time'],1000)
         self.assertTrue(all('Три слога - Song' in p['text'] for p in saved))
+
+    def test_approved_batch_waits_then_creates_remaining_without_repeating_date(self):
+        self.scheduled_fixture()
+        self.page.evaluate('''()=>{
+          const send=chrome.runtime.sendMessage;
+          chrome.runtime.sendMessage=async msg=>msg.type==='pendingInspect' ?
+            {ok:true,found:savedPosts.some(post=>post.timestamp===msg.date && post.text.includes(msg.text))} : send(msg);
+        }''')
+        result=self.page.evaluate('''async()=>{
+          const started=Date.now();await TriSloga.runBatch({id:'fixture',amount:2,completed:1,intervalSeconds:1,
+            lastDate:1798731000000,queueDate:1798731000000,waitBeforeNext:true});return Date.now()-started;
+        }''')
+        saved=self.page.evaluate('savedPosts')
+        self.assertEqual(len(saved),1)
+        self.assertEqual(saved[0]['timestamp'],1798817400000)
+        self.assertEqual(self.page.evaluate('progress.map(p=>p.completed)'),[2])
+        self.assertGreaterEqual(result,1000)
 
     def test_captcha_requires_user_ok_and_visible_challenge_cannot_resume(self):
         self.content('<div id=captcha>Challenge</div>')
@@ -367,6 +394,38 @@ class BatchBackgroundTests(unittest.TestCase):
         self.assertEqual(result['publicationAttempt']['status'],'unconfirmed')
         self.assertIn('Можно начать новую',result['batch']['error'])
         self.start()
+
+    def test_approve_counts_uncertain_post_and_continues_only_remaining(self):
+        self.start(amount=17,interval=30)
+        self.page.evaluate("store.publicationAttempt={status:'pending',batchId:store.batch.id,jobId:'uncertain',scheduledAt:1792049940000}")
+        self.page.evaluate("batchCommand({type:'batchError',batchId:store.batch.id,error:'Unconfirmed'},{tab:{id:7}})")
+        self.assertTrue(self.page.evaluate('store.batch.awaitingApproval'))
+        old_id=self.page.evaluate('store.batch.id')
+        self.page.evaluate("batchCommand({type:'batchApprove',batchId:store.batch.id,attemptId:'uncertain'},{})")
+        self.page.wait_for_function('calls.filter(c=>c.type==="batchStart").length===2')
+        self.assertEqual(self.page.evaluate('store.batch.id'),old_id)
+        self.assertEqual(self.page.evaluate('store.batch.completed'),1)
+        self.assertEqual(self.page.evaluate('store.batch.lastDate'),1792049940000)
+        self.assertTrue(self.page.evaluate('store.publicationAttempt.confirmedByUser'))
+        self.assertTrue(self.page.evaluate('calls.filter(c=>c.type==="batchStart")[1].batch.waitBeforeNext'))
+        error=self.page.evaluate("async()=>{try{await batchCommand({type:'batchApprove',batchId:store.batch.id,attemptId:'uncertain'},{})}catch(e){return e.message}}")
+        self.assertIn('Нет этой отправки',error)
+        self.assertEqual(self.page.evaluate('store.batch.completed'),1)
+
+    def test_stale_approval_rejected_and_last_post_has_no_continue(self):
+        self.start(amount=1)
+        self.page.evaluate("store.publicationAttempt={status:'pending',batchId:store.batch.id,jobId:'uncertain',scheduledAt:1792049940000}")
+        self.page.evaluate("batchCommand({type:'batchError',batchId:store.batch.id,error:'Unconfirmed'},{tab:{id:7}})")
+        self.assertFalse(self.page.evaluate('store.batch.awaitingApproval'))
+        error=self.page.evaluate("async()=>{try{await batchCommand({type:'batchApprove',batchId:store.batch.id,attemptId:'uncertain'},{})}catch(e){return e.message}}")
+        self.assertIn('Нет этой отправки',error)
+        self.assertFalse(self.page.evaluate('store.batch.enabled'))
+
+    def test_archived_mid_batch_from_previous_version_gains_approve_button(self):
+        self.start(amount=17)
+        self.page.evaluate("store.batch.enabled=false;store.batch.running=false;store.batch.unconfirmed=true;store.publicationAttempt={status:'unconfirmed',batchId:store.batch.id,jobId:'old',scheduledAt:1792049940000}")
+        result=self.page.evaluate("batchCommand({type:'batchStatus'},{})")
+        self.assertTrue(result['batch']['awaitingApproval'])
 
     def test_new_start_recovers_old_paused_pending_batch_without_status_read(self):
         self.start()

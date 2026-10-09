@@ -92,7 +92,7 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
     }
     if (message.type.startsWith('batch')) {
       if(['batchProgress','batchError','batchCaptcha','batchHeartbeat'].includes(message.type) && !fromVK) throw new Error('Команда должна поступить из VK.');
-      if(['batchStart','batchStatus'].includes(message.type) && sender.tab) throw new Error('Используйте настройки расширения.');
+      if(['batchStart','batchStatus','batchApprove'].includes(message.type) && sender.tab) throw new Error('Используйте настройки расширения.');
       const result=await batchCommand(message,sender);
       if(message.type==='batchError')await downloadDiagnostics(String(message.error),message.batchId);
       return result;

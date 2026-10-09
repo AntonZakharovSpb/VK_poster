@@ -97,10 +97,15 @@ async function batchLaunch(id) {
 const UNCONFIRMED_WARNING='Последняя отправка не подтверждена: запись могла попасть в «Отложенные». Партия остановлена без повторной отправки. Можно начать новую партию; её даты будут прочитаны из VK.';
 async function finishUnconfirmedBatch(force=false) {
   const {batch,publicationAttempt,activeJob}=await chrome.storage.local.get(['batch','publicationAttempt','activeJob']);
+  if(publicationAttempt?.status==='unconfirmed' && publicationAttempt.batchId===batch?.id && batch.unconfirmed &&
+      !Object.hasOwn(batch,'awaitingApproval') && !batch.stopped && batch.completed+1<batch.amount) {
+    await chrome.storage.local.set({batch:{...batch,awaitingApproval:true}});return false;
+  }
   if(publicationAttempt?.status!=='pending' || publicationAttempt.batchId!==batch?.id ||
       !Number.isFinite(publicationAttempt.scheduledAt) || (!force && batch.enabled && batch.running))return false;
   await chrome.storage.local.set({publicationAttempt:{...publicationAttempt,status:'unconfirmed'},
-    batch:{...batch,enabled:false,running:false,captcha:false,needsFix:false,done:false,unconfirmed:true,error:UNCONFIRMED_WARNING}});
+    batch:{...batch,enabled:false,running:false,captcha:false,needsFix:false,done:false,unconfirmed:true,
+      awaitingApproval:!batch.stopped && batch.completed+1<batch.amount,error:UNCONFIRMED_WARNING}});
   if(activeJob?.id===publicationAttempt.jobId)await chrome.storage.local.remove('activeJob');
   return true;
 }
@@ -112,6 +117,21 @@ async function batchCommand(message,sender) {
     const {batch}=await chrome.storage.local.get('batch');
     if(!batch?.enabled||batch.id!==message.batchId||batch.tabId!==sender.tab?.id)throw new Error('Устаревший сеанс партии.');
     return readPendingPage(batch,{text:message.text,date:message.date});
+  }
+  if(message.type==='batchApprove') {
+    const id=await batchSerial(async()=>{
+      const {batch,publicationAttempt,activeJob}=await chrome.storage.local.get(['batch','publicationAttempt','activeJob']);
+      if(!batch?.awaitingApproval || batch.running || batch.id!==message.batchId ||
+          publicationAttempt?.status!=='unconfirmed' || publicationAttempt.batchId!==batch.id ||
+          publicationAttempt.jobId!==message.attemptId || !Number.isFinite(publicationAttempt.scheduledAt) ||
+          publicationAttempt.scheduledAt<=(batch.lastDate||0))throw new Error('Нет этой отправки для подтверждения. Обновите окно расширения.');
+      if(activeJob?.expires>Date.now())throw new Error('Предыдущая попытка ещё завершается.');
+      await chrome.storage.local.set({publicationAttempt:{...publicationAttempt,status:'published',confirmedByUser:true},
+        batch:{...batch,completed:batch.completed+1,lastDate:publicationAttempt.scheduledAt,enabled:true,running:true,
+          awaitingApproval:false,unconfirmed:false,needsFix:false,stopped:false,error:'',waitBeforeNext:true}});
+      await chrome.action.setBadgeText({text:''});return batch.id;
+    });
+    batchLaunch(id);return chrome.storage.local.get('batch');
   }
   if(message.type==='batchStart') {
     const amount=Number(message.amount), intervalSeconds=Number(message.intervalSeconds);
@@ -161,7 +181,7 @@ async function batchCommand(message,sender) {
       const {batch}=await chrome.storage.local.get('batch');
       if(batch?.tabId) { try {await chrome.tabs.sendMessage(batch.tabId,{type:'batchStop',batchId:batch.id});}catch{} }
       if(batch?.inspectionTabId) {try {await chrome.tabs.sendMessage(batch.inspectionTabId,{type:'batchStop',batchId:batch.id});}catch{}}
-      await chrome.storage.local.set({batch:{...batch,enabled:false,running:false,captcha:false,stopped:true}});
+      await chrome.storage.local.set({batch:{...batch,enabled:false,running:false,captcha:false,stopped:true,awaitingApproval:false}});
       return chrome.storage.local.get('batch');
     });
   }
@@ -183,7 +203,7 @@ async function batchCommand(message,sender) {
       if(message.completed!==batch.completed+1||message.completed>batch.amount||!Number.isFinite(message.lastDate)||message.lastDate<=(batch.lastDate||0)) throw new Error('Неверная контрольная точка партии.');
       const done=message.completed===batch.amount;
       await chrome.storage.local.set({batch:{...batch,completed:message.completed,lastDate:message.lastDate,
-        enabled:!done,running:!done,done,captcha:false,error:'',needsFix:false}});
+        enabled:!done,running:!done,done,captcha:false,error:'',needsFix:false,waitBeforeNext:false}});
       await chrome.action.setBadgeText({text:''});return {};
     }
     if(message.type==='batchError') {

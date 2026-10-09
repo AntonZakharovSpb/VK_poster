@@ -2,6 +2,8 @@ const status=document.getElementById('status');
 const interval=document.getElementById('interval'),amount=document.getElementById('amount');
 const enable=document.getElementById('enable'),disable=document.getElementById('disable');
 const fixed=document.getElementById('fixed'),captcha=document.getElementById('captcha');
+const approve=document.getElementById('approve');
+let approval=null;
 let uncertain=false;
 async function command(data) {
   const reply=await chrome.runtime.sendMessage(data);
@@ -9,6 +11,8 @@ async function command(data) {
 }
 function render({batch,publicationAttempt}) {
   uncertain=publicationAttempt?.status==='pending';
+  approval=batch?.awaitingApproval ? {batchId:batch.id,attemptId:publicationAttempt?.jobId} : null;
+  approve.hidden=!approval;
   if(batch?.amount) amount.value=batch.amount;
   if(batch?.intervalSeconds) interval.value=batch.intervalSeconds;
   enable.disabled=!!batch?.enabled;amount.disabled=interval.disabled=!!batch?.enabled;
@@ -21,6 +25,7 @@ function render({batch,publicationAttempt}) {
   if(batch?.captcha)lines.push('Решите CAPTCHA во вкладке VK и нажмите «ОК — продолжить».');
   else if(batch?.error)lines.push(batch.error);
   else if(batch?.running)lines.push('Создаю отложенные записи во вкладке VK…');
+  if(approval)lines.push('Если запись есть в «Отложенные», нажмите «Подтверждаю — продолжить». Учту её и создам оставшиеся посты без повторной отправки.');
   status.textContent=lines.join('\n');
 }
 async function refresh(){try{render(await command({type:'batchStatus'}));}catch(error){status.textContent=error.message;}}
@@ -30,6 +35,12 @@ enable.onclick=async()=>{
   catch(error){status.textContent=error.message;enable.disabled=false;}
 };
 disable.onclick=async()=>{try{render(await command({type:'batchStop'}));}catch(error){status.textContent=error.message;}};
+approve.onclick=async()=>{
+  if(!approval)return;
+  approve.disabled=true;
+  try{render(await command({type:'batchApprove',...approval}));}catch(error){status.textContent=error.message;}
+  finally{approve.disabled=false;}
+};
 fixed.onclick=async()=>{
   if(uncertain&&!confirm('Проверьте «Отложенные»: предыдущая запись могла сохраниться. Вы подтверждаете, что её нет, и хотите повторить?'))return;
   fixed.disabled=true;

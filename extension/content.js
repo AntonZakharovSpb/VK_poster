@@ -655,9 +655,9 @@
   }
   function diagnostics(error = '') {
     const scope = currentComposerRoot() || document;
-    return {version: '0.5.4', time: new Date().toISOString(), stage: state.stage, error,
+    return {version: '0.5.5', time: new Date().toISOString(), stage: state.stage, error,
       batch:state.batch ? {id:state.batch.id,amount:state.batch.amount,completed:state.batch.completed,intervalSeconds:state.batch.intervalSeconds} : null,
-      plannedAt:state.plannedAt,captchaPaused:!!state.captchaPaused,
+      plannedAt:state.plannedAt,captchaPaused:!!state.captchaPaused,verification:state.verification,
       scheduledPostHeaders:scheduledPosts(document).slice(0,40).map(post=>({id:post.id,
         header:normalize(post.querySelector('.post_header,[data-testid="post-header"],.post_date')?.textContent||'').slice(0,180),
         date:pendingPostDate(post)})),
@@ -753,7 +753,7 @@
     await click(tab);await delay(700);
     return until(pendingRoot,'список отложенных записей');
   }
-  async function latestPendingDate() {
+  async function latestPendingDate(onPost) {
     state.stage='read scheduled posts';
     let root=await openPending();
     let latest=null,stable=0,signature='',started=Date.now();
@@ -762,6 +762,7 @@
       const posts=scheduledPosts(root);
       for(const post of posts) {
         const value=pendingPostDate(post);
+        if(onPost)onPost(post,value);
         if(value===null) throw new Error('Не удалось прочитать дату отложенной записи. Нужна диагностика формата VK.');
         latest=latest===null?value:Math.max(latest,value);
       }
@@ -911,6 +912,11 @@
       const latest=Object.hasOwn(batch,'queueDate') ? batch.queueDate : await latestPendingDate();
       let previous=Math.floor(Math.max(latest||0,batch.lastDate||0)/60000)*60000;
       if(!previous) {const p=dateParts(Date.now());previous=moscowDate(+p.year,+p.month,+p.day,+p.hour,+p.minute);}
+      if(batch.waitBeforeNext) {
+        state.stage='batch interval';
+        let remaining=batch.intervalSeconds*1000;
+        while(remaining>0) {await captchaGate();const chunk=Math.min(remaining,200);await delay(chunk);remaining-=chunk;}
+      }
       for(let completed=batch.completed;completed<batch.amount;completed++) {
         if(state.batchStopped) throw new Error('Остановлено пользователем.');
         const planned=previous+86400000;
@@ -971,7 +977,7 @@
       const submit=options.scheduledAt ? await prepareScheduledSubmission(options.scheduledAt) : one(control(root, /^Опубликовать$/u), 'кнопка публикации');
       await message({type: 'beginPublish', jobId, photo: state.photo.id, audio: state.audio.id,scheduledAt:options.scheduledAt,batchId:state.batch?.id});
       if (state.stopped) throw new Error('Остановлено пользователем. Проверьте стену перед новой попыткой.');
-      state.stage = 'publish';
+      state.stage = 'publish';state.verification=null;
       await click(submit);
       log('Публикация отправлена один раз. Проверяю результат…');
       try {
@@ -979,7 +985,8 @@
           await until(()=>!currentComposerRoot(),'закрытие редактора после планирования',20000);
           if(state.batch && Object.hasOwn(state.batch,'queueDate')) {
             const check=await message({type:'pendingInspect',batchId:state.batch.id,text:text.split('\n')[0],date:options.scheduledAt});
-            if(!check.found) throw new Error('Новая запись с выбранной датой не найдена в «Отложенные».');
+            state.verification=check;
+            if(!check.found) throw new Error('Новая запись с выбранным текстом и датой не найдена в «Отложенные».');
           } else {
             const pending=await openPending();
             await until(()=>scheduledPosts(pending).find(post=>post.textContent.includes(text.split('\n')[0]) &&
@@ -987,7 +994,8 @@
           }
         } else await until(() => all(document, '[data-testid="post"],.wall_item').find(post =>
           visible(post) && post.textContent.includes(text.split('\n')[0])), 'новая публикация на стене', 20000);
-      } catch {
+      } catch (verificationError) {
+        state.verification={...state.verification,error:verificationError.message};
         if(options.scheduledAt && state.batch)throw new Error('Результат отправки не подтверждён: запись могла попасть в «Отложенные». Партия остановлена без повторной отправки. Можно начать новую партию.');
         throw new Error('Результат отправки не подтверждён. Проверьте стену и «Отложенные»: пост мог появиться. Повторная отправка заблокирована.');
       }
@@ -1018,9 +1026,14 @@
       const heartbeat=setInterval(()=>message({type:'batchHeartbeat',batchId:options.batch.id}).catch(()=>{}),20000);
       (async()=>{
         try {
-          const latest=await latestPendingDate();
-          const found=options.text ? scheduledPosts(document).some(post=>post.textContent.includes(options.text) && pendingPostDate(post)===options.date) : undefined;
-          reply({ok:true,latest,found});
+          let found=options.text ? false : undefined;
+          const observed=[];
+          const latest=await latestPendingDate((post,date)=>{
+            const textMatches=options.text ? normalize(post.textContent).includes(normalize(options.text)) : undefined;
+            if(textMatches && date===options.date)found=true;
+            if(observed.length<60)observed.push({id:post.id,date,textMatches});
+          });
+          reply({ok:true,latest,found,verification:{expectedText:options.text,expectedDate:options.date,observed}});
         } catch(error) {
           try {await message({type:'diagnostic',data:diagnostics(error.message),download:true,batchId:options.batch.id});}catch{}
           reply({ok:false,error:error.message});

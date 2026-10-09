@@ -596,6 +596,21 @@ class ExtensionTests(unittest.TestCase):
         self.assertTrue(self.page.locator('#fixed').is_hidden())
         self.assertTrue(self.page.locator('#amount').is_enabled())
 
+    def test_popup_approve_sends_specific_attempt_without_retry(self):
+        self.page.set_content((EXT/'popup.html').read_text(encoding='utf-8'))
+        self.page.evaluate('''()=>{
+          window.calls=[];chrome.storage.onChanged={addListener:()=>{}};
+          chrome.runtime.sendMessage=async msg=>{
+            calls.push(msg);return {ok:true,batch:{id:'batch',enabled:msg.type==='batchApprove',running:msg.type==='batchApprove',
+              awaitingApproval:msg.type!=='batchApprove',unconfirmed:msg.type!=='batchApprove',amount:17,completed:0,intervalSeconds:30},
+              publicationAttempt:{status:'unconfirmed',jobId:'attempt'}};
+          };
+        }''')
+        self.page.add_script_tag(path=str(EXT/'popup.js'))
+        self.page.locator('#approve').click()
+        self.assertEqual(self.page.evaluate('calls.at(-1)'),{'type':'batchApprove','batchId':'batch','attemptId':'attempt'})
+        self.assertTrue(self.page.locator('#approve').is_hidden())
+
     def test_background_rejects_album_discovery_without_opening_tabs(self):
         self.page.evaluate('chrome.tabs={create:()=>{throw Error("Must not open album tab")}}')
         self.page.add_script_tag(path=str(EXT/'background.js'))
