@@ -611,6 +611,21 @@ class ExtensionTests(unittest.TestCase):
         self.assertEqual(self.page.evaluate('calls.at(-1)'),{'type':'batchApprove','batchId':'batch','attemptId':'attempt'})
         self.assertTrue(self.page.locator('#approve').is_hidden())
 
+    def test_popup_finished_batch_lists_uncertain_dates_in_moscow(self):
+        self.page.set_content((EXT/'popup.html').read_text(encoding='utf-8'))
+        self.page.evaluate('''()=>{
+          chrome.storage.onChanged={addListener:()=>{}};
+          chrome.runtime.sendMessage=async()=>({ok:true,batch:{done:true,enabled:false,amount:2,completed:2,
+            uncertainDates:[1792049940000,1792136340000]}});
+        }''')
+        self.page.add_script_tag(path=str(EXT/'popup.js'))
+        self.page.wait_for_function("document.getElementById('status').textContent.includes('15.10.2026')")
+        text=self.page.locator('#status').inner_text()
+        self.assertIn('Партия завершена',text)
+        self.assertIn('16.10.2026',text)
+        self.assertIn('10:39:00',text)
+        self.assertTrue(self.page.locator('#approve').is_hidden())
+
     def test_background_rejects_album_discovery_without_opening_tabs(self):
         self.page.evaluate('chrome.tabs={create:()=>{throw Error("Must not open album tab")}}')
         self.page.add_script_tag(path=str(EXT/'background.js'))

@@ -52,7 +52,7 @@ function jobCommand(message, sender) {
       return {};
     }
     if (message.type === 'completePublish' && publicationAttempt?.jobId === message.jobId) {
-      await chrome.storage.local.set({publicationAttempt: {...publicationAttempt, status: 'published'}});
+      await chrome.storage.local.set({publicationAttempt: {...publicationAttempt, status: message.unconfirmed===true ? 'unconfirmed' : 'published'}});
       return {};
     }
     throw new Error('Неизвестное действие публикации.');

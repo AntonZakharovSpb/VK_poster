@@ -655,7 +655,7 @@
   }
   function diagnostics(error = '') {
     const scope = currentComposerRoot() || document;
-    return {version: '0.5.5', time: new Date().toISOString(), stage: state.stage, error,
+    return {version: '0.5.6', time: new Date().toISOString(), stage: state.stage, error,
       batch:state.batch ? {id:state.batch.id,amount:state.batch.amount,completed:state.batch.completed,intervalSeconds:state.batch.intervalSeconds} : null,
       plannedAt:state.plannedAt,captchaPaused:!!state.captchaPaused,verification:state.verification,
       scheduledPostHeaders:scheduledPosts(document).slice(0,40).map(post=>({id:post.id,
@@ -923,7 +923,7 @@
         state.plannedAt=planned;
         const result=await run({automatic:true,scheduledAt:planned});
         if(!result?.success) throw new Error(result?.error||'Отложенная запись не подтверждена.');
-        await message({type:'batchProgress',batchId:batch.id,completed:completed+1,lastDate:planned});
+        await message({type:'batchProgress',batchId:batch.id,completed:completed+1,lastDate:planned,unconfirmed:!!result.unconfirmed});
         state.batch.completed=completed+1;state.batch.lastDate=planned;
         previous=planned;
         if(completed+1<batch.amount) {
@@ -936,6 +936,7 @@
         }
       }
     } catch(error) {
+      if(state.stopped || state.batchStopped)return;
       log('Партия остановлена: '+error.message);panel();
       try {await message({type:'diagnostic',data:diagnostics(error.message),download:true,batchId:batch.id});}catch{}
       try {await message({type:'batchError',batchId:batch.id,error:error.message});}catch{}
@@ -996,6 +997,11 @@
           visible(post) && post.textContent.includes(text.split('\n')[0])), 'новая публикация на стене', 20000);
       } catch (verificationError) {
         state.verification={...state.verification,error:verificationError.message};
+        if(options.scheduledAt && state.batch && !currentComposerRoot() && !state.stopped && !state.batchStopped) {
+          await message({type:'completePublish',jobId,unconfirmed:true});
+          log('Отправка не подтверждена. Продолжаю без повторной отправки; дата будет в итоговом списке.');
+          outcome={success:true,unconfirmed:true};return outcome;
+        }
         if(options.scheduledAt && state.batch)throw new Error('Результат отправки не подтверждён: запись могла попасть в «Отложенные». Партия остановлена без повторной отправки. Можно начать новую партию.');
         throw new Error('Результат отправки не подтверждён. Проверьте стену и «Отложенные»: пост мог появиться. Повторная отправка заблокирована.');
       }
@@ -1035,7 +1041,7 @@
           });
           reply({ok:true,latest,found,verification:{expectedText:options.text,expectedDate:options.date,observed}});
         } catch(error) {
-          try {await message({type:'diagnostic',data:diagnostics(error.message),download:true,batchId:options.batch.id});}catch{}
+          try {await message({type:'diagnostic',data:diagnostics(error.message),download:!options.text && !state.stopped,batchId:options.batch.id});}catch{}
           reply({ok:false,error:error.message});
         } finally {clearInterval(heartbeat);state.batch=null;}
       })();return true;

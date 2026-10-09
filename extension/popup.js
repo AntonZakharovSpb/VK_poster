@@ -20,12 +20,16 @@ function render({batch,publicationAttempt}) {
   fixed.hidden=!batch?.enabled||!batch?.needsFix||!!batch?.captcha;
   captcha.hidden=!batch?.captcha;
   const lines=[batch?.unconfirmed?'Партия остановлена. Можно начать новую.':batch?.done?'Партия завершена.':batch?.enabled?'Партия запущена.':'Партия не запущена.'];
-  if(batch?.amount)lines.push(`${batch.unconfirmed?'Подтверждено':'Запланировано'}: ${batch.completed||0} из ${batch.amount}.`);
+  if(batch?.amount)lines.push(`${batch.unconfirmed?'Подтверждено':batch.uncertainDates?.length?'Обработано':'Запланировано'}: ${batch.completed||0} из ${batch.amount}.`);
   if(batch?.lastDate)lines.push('Последняя дата: '+new Date(batch.lastDate).toLocaleString('ru-RU',{timeZone:'Europe/Moscow'})+' (Москва).');
   if(batch?.captcha)lines.push('Решите CAPTCHA во вкладке VK и нажмите «ОК — продолжить».');
   else if(batch?.error)lines.push(batch.error);
   else if(batch?.running)lines.push('Создаю отложенные записи во вкладке VK…');
   if(approval)lines.push('Если запись есть в «Отложенные», нажмите «Подтверждаю — продолжить». Учту её и создам оставшиеся посты без повторной отправки.');
+  if(batch?.uncertainDates?.length) {
+    lines.push('Не удалось подтвердить следующие отправки (Москва):');
+    for(const date of batch.uncertainDates)lines.push(new Date(date).toLocaleString('ru-RU',{timeZone:'Europe/Moscow'}));
+  }
   status.textContent=lines.join('\n');
 }
 async function refresh(){try{render(await command({type:'batchStatus'}));}catch(error){status.textContent=error.message;}}

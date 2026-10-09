@@ -1,4 +1,4 @@
-Три Слога — Chrome extension 0.5.5
+Три Слога — Chrome extension 0.5.6
 
 INSTALL / UPDATE
 Open chrome://extensions in your normal Chrome profile.
@@ -36,11 +36,9 @@ challenge does not resume the batch. «Остановить» cancels remaining 
 
 ERRORS / RESTART
 Errors show their reason and enable «Исправлено — повторить».
-An unconfirmed submission ends the batch with a warning, without retrying it.
-If posts remain, click «Подтверждаю — продолжить» after checking that the post exists.
-It is counted once; only the remaining posts are created, after the selected interval.
-For an uncertain final post, you can start a new batch; dates are read from VK again.
-Old saved pending batches are recovered automatically when the popup opens.
+If the editor closed after submission, an uncertain verification continues automatically.
+No retry or confirmation is required. Intended Moscow dates/times appear in the final report.
+Diagnostics download only for unexpected errors or interruptions, not uncertain verification.
 Closing the browser or VK tab pauses the batch and retains progress.
 Resume manually after checking VK. Do not close Chrome during normal work.
 Errors automatically download diagnostics/logs as Tri-Sloga-diagnostics-YYYY-MM-DD_HH-MM-SS.json

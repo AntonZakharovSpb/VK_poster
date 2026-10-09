@@ -159,9 +159,10 @@ async function batchCommand(message,sender) {
       if(!reply?.ok) throw new Error(reply?.error || 'Вкладка с CAPTCHA недоступна.');
     } else {
       if(!batch.needsFix) throw new Error('Партия уже выполняется.');
-      if(publicationAttempt?.status==='published' && publicationAttempt.batchId===batch.id &&
+      if((publicationAttempt?.status==='published' || (publicationAttempt?.status==='unconfirmed' && !batch.unconfirmed)) && publicationAttempt.batchId===batch.id &&
           publicationAttempt.scheduledAt>(batch.lastDate||0)) {
-        batch={...batch,completed:batch.completed+1,lastDate:publicationAttempt.scheduledAt};
+        batch={...batch,completed:batch.completed+1,lastDate:publicationAttempt.scheduledAt,
+          uncertainDates:[...(batch.uncertainDates||[]),...(publicationAttempt.status==='unconfirmed'?[publicationAttempt.scheduledAt]:[])]};
         if(batch.completed>=batch.amount) {
           await chrome.storage.local.set({batch:{...batch,enabled:false,running:false,needsFix:false,done:true,error:''}});
           return chrome.storage.local.get('batch');
@@ -202,8 +203,9 @@ async function batchCommand(message,sender) {
     if(message.type==='batchProgress') {
       if(message.completed!==batch.completed+1||message.completed>batch.amount||!Number.isFinite(message.lastDate)||message.lastDate<=(batch.lastDate||0)) throw new Error('Неверная контрольная точка партии.');
       const done=message.completed===batch.amount;
+      const uncertainDates=[...(batch.uncertainDates||[]),...(message.unconfirmed===true?[message.lastDate]:[])];
       await chrome.storage.local.set({batch:{...batch,completed:message.completed,lastDate:message.lastDate,
-        enabled:!done,running:!done,done,captcha:false,error:'',needsFix:false,waitBeforeNext:false}});
+        enabled:!done,running:!done,done,captcha:false,error:'',needsFix:false,waitBeforeNext:false,uncertainDates}});
       await chrome.action.setBadgeText({text:''});return {};
     }
     if(message.type==='batchError') {
@@ -219,7 +221,7 @@ async function batchInterrupted(expectedId,departedDocumentId) {
     const {batch}=await chrome.storage.local.get('batch');
     if(expectedId && batch?.id!==expectedId)return;
     if(departedDocumentId && batch?.documentId!==departedDocumentId)return;
-    if(batch?.enabled) {
+    if(batch?.enabled && batch.running) {
       await chrome.storage.local.set({batch:{...batch,running:false,captcha:false,needsFix:true,
         error:'Вкладка или браузер были закрыты. Проверьте «Отложенные» перед продолжением партии.'}});
       await chrome.storage.local.remove(['activeJob']);

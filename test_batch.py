@@ -205,6 +205,36 @@ class BatchPageTests(unittest.TestCase):
         self.assertEqual(self.page.evaluate('progress.map(p=>p.completed)'),[2])
         self.assertGreaterEqual(result,1000)
 
+    def test_uncertain_verification_continues_all_posts_once_without_downloads(self):
+        self.scheduled_fixture()
+        self.page.evaluate('''()=>{
+          window.downloads=[];window.completions=[];
+          const send=chrome.runtime.sendMessage;
+          chrome.runtime.sendMessage=async msg=>{
+            if(msg.download)downloads.push(msg);
+            if(msg.type==='completePublish')completions.push(msg);
+            if(msg.type==='pendingInspect')return {ok:true,found:false};
+            return send(msg);
+          };
+        }''')
+        self.page.evaluate("TriSloga.runBatch({id:'fixture',amount:3,completed:0,intervalSeconds:1,queueDate:1798644600000})")
+        self.assertEqual(self.page.evaluate('savedPosts.length'),3)
+        self.assertEqual(self.page.evaluate('progress.map(p=>p.completed)'),[1,2,3])
+        self.assertEqual(self.page.evaluate('progress.map(p=>p.unconfirmed)'),[True,True,True])
+        self.assertEqual(self.page.evaluate('completions.map(p=>p.unconfirmed)'),[True,True,True])
+        self.assertEqual(self.page.evaluate('downloads'),[])
+
+    def test_verification_request_failure_continues_without_reposting(self):
+        self.scheduled_fixture()
+        self.page.evaluate('''()=>{
+          const send=chrome.runtime.sendMessage;
+          chrome.runtime.sendMessage=async msg=>{if(msg.type==='pendingInspect')throw Error('Queue unavailable');return send(msg);};
+        }''')
+        self.page.evaluate("TriSloga.runBatch({id:'fixture',amount:1,completed:0,intervalSeconds:1,queueDate:1798644600000})")
+        self.assertEqual(self.page.evaluate('savedPosts.length'),1)
+        self.assertTrue(self.page.evaluate('progress[0].unconfirmed'))
+        self.assertEqual(self.page.evaluate('TriSloga.state.verification.error'),'Queue unavailable')
+
     def test_captcha_requires_user_ok_and_visible_challenge_cannot_resume(self):
         self.content('<div id=captcha>Challenge</div>')
         self.page.evaluate('''()=>{
@@ -277,6 +307,18 @@ class BatchBackgroundTests(unittest.TestCase):
         self.page.evaluate("batchCommand({type:'batchProgress',batchId:store.batch.id,completed:3,lastDate:1798903800000},{tab:{id:7}})")
         self.assertTrue(self.page.evaluate('store.batch.done'))
         self.assertFalse(self.page.evaluate('store.batch.enabled'))
+
+    def test_uncertain_dates_retained_at_batch_completion(self):
+        self.start(amount=2)
+        self.page.evaluate("batchCommand({type:'batchProgress',batchId:store.batch.id,completed:1,lastDate:1792049940000,unconfirmed:true},{tab:{id:7}})")
+        self.page.evaluate("batchCommand({type:'batchProgress',batchId:store.batch.id,completed:2,lastDate:1792136340000,unconfirmed:true},{tab:{id:7}})")
+        self.assertTrue(self.page.evaluate('store.batch.done'))
+        self.assertEqual(self.page.evaluate('store.batch.uncertainDates'),[1792049940000,1792136340000])
+
+    def test_reopening_already_paused_batch_does_not_download_again(self):
+        self.start()
+        self.page.evaluate("window.reports=[];window.downloadDiagnostics=async(...args)=>reports.push(args);store.batch.running=false;batchInterrupted()")
+        self.assertEqual(self.page.evaluate('reports'),[])
 
     def test_queue_inspection_uses_separate_tab_and_passes_latest_date(self):
         self.page.evaluate('''()=>{
