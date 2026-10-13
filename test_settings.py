@@ -5,7 +5,7 @@ import test_extension
 import test_batch
 
 EXT=Path(__file__).parent/'extension'
-CUSTOM={'communityUrl':'https://vk.ru/another_group','artist':'Другой артист','documentUrl':'https://docs.google.com/document/d/custom_doc/edit','noAudio':False,'noText':False}
+CUSTOM={'communityUrl':'https://vk.ru/another_group','artist':'Другой артист','documentUrl':'https://docs.google.com/document/d/custom_doc/edit','noAudio':False,'noText':False,'textMode':'document','quoteReference':'','customText':''}
 COMMUNITY={'owner':'-123456','path':'/another_group','name':'Другое сообщество','origin':'https://vk.ru'}
 
 class SettingsPageTests(unittest.TestCase):
@@ -104,7 +104,7 @@ class SettingsPageTests(unittest.TestCase):
         self.assertEqual(self.page.evaluate('publishCount'),1)
         self.assertEqual(self.page.evaluate('searchQueries[0]'),'Другой артист Song')
         self.assertEqual(self.page.evaluate('TriSloga.state.photo.id'),'-123456_123')
-        self.assertIn('Другой артист - Song',self.page.locator('#post').inner_text())
+        self.assertIn('Другое сообщество - Song',self.page.locator('#post').inner_text())
 
     def test_community_without_music_tab_uses_artist_search(self):
         self.workflow_fixture(custom=True)
@@ -129,7 +129,8 @@ class SettingsPageTests(unittest.TestCase):
             return {ok:true,settings:testStorage.settings,batch:msg.type==='batchStart'?{enabled:true,settings:msg.settings}:undefined};};}''')
         self.page.add_script_tag(path=str(EXT/'popup.js'))
         for key,value in CUSTOM.items():
-            if isinstance(value,str): self.page.locator('#'+key).fill(value)
+            if key == 'textMode': self.page.locator('#'+key).select_option(value)
+            elif isinstance(value,str) and self.page.locator('#'+key).is_visible(): self.page.locator('#'+key).fill(value)
         self.page.locator('#saveSettings').click()
         self.assertEqual(self.page.evaluate('testStorage.settings'),CUSTOM)
         self.page.evaluate('settingsLoaded=false;refresh()')
@@ -147,7 +148,7 @@ class SettingsPageTests(unittest.TestCase):
         self.page.evaluate('batch=>TriSloga.runBatch(batch)',batch)
         saved=self.page.evaluate('savedPosts')
         self.assertEqual([p['timestamp'] for p in saved],[1798731000000,1798817400000])
-        self.assertTrue(all('Другой артист - Song' in p['text'] for p in saved))
+        self.assertTrue(all('Другое сообщество - Song' in p['text'] for p in saved))
         self.assertEqual(self.page.evaluate('beginAttempts.length'),2)
         self.assertIsNone(self.page.evaluate('window.publishCount'))
 

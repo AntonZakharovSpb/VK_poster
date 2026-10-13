@@ -619,6 +619,9 @@
     const doc = new DOMParser().parseFromString(html, 'text/html');
     const songs = [];
     let song;
+    if (!doc.querySelector('h1,h2,h3,h4,h5,h6') && doc.querySelector('style') && !doc.querySelector('form,input[type="password"]')) {
+      song = {title:'',lines:[]}; songs.push(song);
+    }
     for (const block of all(doc.body, 'h1,h2,h3,h4,h5,h6,p')) {
       if (/^H[1-6]$/u.test(block.tagName)) {
         const title = normalize(block.textContent);
@@ -637,10 +640,10 @@
   }
   function chooseSongExcerpt(html, random = Math.random) {
     const songs = parseSongs(html);
-    if (!songs.length) throw new Error('В документе не найдены песни с заголовками и текстом. Проверьте доступ и структуру документа.');
+    if (!songs.length) throw new Error('В документе не найден текст. Проверьте доступ и структуру документа.');
     const song = songs[Math.floor(random() * songs.length)];
     const verse = song.parts.length ? song.parts[Math.floor(random() * song.parts.length)] : song.text;
-    return {title: song.title, text: `${verse}\n\n${settings.artist} - ${song.title}`};
+    return {title: song.title, text: `${verse}\n\n${NAME}${song.title ? ' - '+song.title : ''}`};
   }
   function normalizedSongTitle(title) {
     return normalize(title).toLocaleLowerCase('ru').replace(/ё/gu, 'е')
@@ -676,8 +679,48 @@
     }
     return best;
   }
+  function parseQuotes(html, source, reference) {
+    const url = new URL(source);
+    if (url.origin !== 'https://ru.wikiquote.org' || !url.pathname.startsWith('/wiki/')) return [];
+    const doc = new DOMParser().parseFromString(html,'text/html');
+    const topic = normalize(doc.querySelector('#firstHeading')?.textContent || '').toLocaleLowerCase('ru');
+    const wanted = normalize(reference).toLocaleLowerCase('ru');
+    const quotes = [];
+    for (const table of doc.querySelectorAll('.mw-parser-output table.q')) {
+      const textCell = table.querySelector('.q-text td:last-child');
+      const authorCell = table.querySelector('.q-author td:last-child');
+      if (!textCell || !authorCell || !/^\s*—/u.test(authorCell.textContent)) continue;
+      const authorLink = authorCell.querySelector('a');
+      if (authorLink?.getAttribute('href')) {
+        const authorUrl = new URL(authorLink.getAttribute('href'),url);
+        if (authorUrl.origin !== url.origin || !authorUrl.pathname.startsWith('/wiki/')) continue;
+      }
+      const author = normalize(authorLink?.textContent || authorCell.textContent.replace(/^\s*—\s*/u,'').split(',')[0]);
+      const clone = textCell.cloneNode(true);
+      for (const el of clone.querySelectorAll('sup,.reference,.mw-editsection')) el.remove();
+      for (const br of clone.querySelectorAll('br')) br.replaceWith(doc.createTextNode('\n'));
+      const text = clone.textContent.replace(/\u00a0/gu,' ').trim();
+      if (!author || /неизвест|аноним|источник|народная|пословица/iu.test(author) || author.length>180 || !text || text.length>3000) continue;
+      if (!wanted || (!topic.includes(wanted) && !text.toLocaleLowerCase('ru').includes(wanted))) continue;
+      quotes.push({text,author,source:url.href});
+    }
+    return quotes;
+  }
   async function preparePostText() {
     state.songTitle = null;
+    if (settings.textMode === 'manual') return `${settings.customText}\n\n${NAME}`;
+    if (settings.textMode === 'quote') {
+      let quotes = [];
+      for (const search of [false,true]) {
+        const result = await message({type:'quotes',batchId:state.batch?.id,search});
+        quotes = (result.pages || []).flatMap(page=>parseQuotes(page.html,page.url,settings.quoteReference));
+        if (quotes.length) break;
+      }
+      if (!quotes.length) throw new Error('Не найдена цитата по этой теме с указанным автором. Попробуйте другое слово или фразу.');
+      const quote = quotes[Math.floor(Math.random()*quotes.length)];
+      log(`Цитата: ${quote.author}; источник: ${quote.source}`);
+      return `${quote.text}\n\n— ${quote.author}\n\nИсточник: ${quote.source}`;
+    }
     const result = await message({type: 'lyrics',batchId:state.batch?.id});
     const prepared = chooseSongExcerpt(result.html);
     state.songTitle = prepared.title;
@@ -685,7 +728,7 @@
   }
   function diagnostics(error = '') {
     const scope = currentComposerRoot() || document;
-    return {version: '0.5.6', time: new Date().toISOString(), stage: state.stage, error,
+    return {version: AZVK.version, time: new Date().toISOString(), stage: state.stage, error,
       batch:state.batch ? {id:state.batch.id,amount:state.batch.amount,completed:state.batch.completed,intervalSeconds:state.batch.intervalSeconds} : null,
       plannedAt:state.plannedAt,captchaPaused:!!state.captchaPaused,verification:state.verification,
       scheduledPostHeaders:scheduledPosts(document).slice(0,40).map(post=>({id:post.id,
@@ -1064,7 +1107,7 @@
     return outcome;
   }
 
-  globalThis.TriSloga = {configure,artistMatches,firstBandSearchAudio,run, photoCandidates, audioCandidates, composerCandidates, parseSongs, chooseSongExcerpt,
+  globalThis.TriSloga = {configure,parseQuotes,preparePostText,artistMatches,firstBandSearchAudio,run, photoCandidates, audioCandidates, composerCandidates, parseSongs, chooseSongExcerpt,
     songSimilarity, matchingCommunityAudio, state, openComposer,
     creationMenuItems, musicPicker, matchesAudio, attachAudio, attachPhoto, nativePhotoCards, currentComposerRoot, audioAttachments, photoAttachments, authorVerified,
     parsePostDate,pendingPostDate,latestPendingDate,prepareScheduledSubmission,runBatch,captchaGate,captchaVisible,dateParts,scheduledPosts};

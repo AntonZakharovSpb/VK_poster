@@ -9,20 +9,24 @@ const noAudio=document.getElementById('noAudio'),noText=document.getElementById(
 let settingsLoaded=false;
 let batchEnabled=false;
 enable.disabled=true;saveSettings.disabled=true;
-const settingsFields=[communityUrl,artist,documentUrl];
-function inputSettings(){return AZVK.normalizeSettings({communityUrl:communityUrl.value,artist:artist.value,documentUrl:documentUrl.value,noAudio:noAudio.checked,noText:noText.checked});}
+const textMode=document.getElementById('textMode'),quoteReference=document.getElementById('quoteReference'),customText=document.getElementById('customText');
+document.getElementById('version').textContent='v'+AZVK.version;
+const settingsFields=[communityUrl,artist,documentUrl,textMode,quoteReference,customText];
+function inputSettings(){return AZVK.normalizeSettings({...Object.fromEntries(settingsFields.map(field=>[field.id,field.value])),noAudio:noAudio.checked,noText:noText.checked});}
 function updateSettingsFields(){
   communityUrl.disabled=batchEnabled;
   artist.disabled=batchEnabled||noAudio.checked;
   documentUrl.disabled=batchEnabled||noText.checked;
+  textMode.disabled=quoteReference.disabled=customText.disabled=batchEnabled||noText.checked;
+  for(const [mode,id] of [['document','documentFields'],['quote','quoteFields'],['manual','manualFields']])document.getElementById(id).hidden=textMode.value!==mode;
   noAudio.disabled=noText.disabled=batchEnabled;
 }
 function showSettings(settings){
-  for(const field of settingsFields)field.value=settings[field.id];
+  for(const field of settingsFields)field.value=settings[field.id]??AZVK.defaults[field.id];
   noAudio.checked=settings.noAudio===true;noText.checked=settings.noText===true;
   updateSettingsFields();
 }
-noAudio.onchange=noText.onchange=updateSettingsFields;
+noAudio.onchange=noText.onchange=textMode.onchange=updateSettingsFields;
 let approval=null;
 let uncertain=false;
 async function command(data) {

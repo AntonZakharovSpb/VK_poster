@@ -5,7 +5,10 @@
     artist: 'Три слога',
     documentUrl: '',
     noAudio: false,
-    noText: false
+    noText: false,
+    textMode: "document",
+    quoteReference: "",
+    customText: ""
   });
   function normalizeSettings(value = defaults) {
     let community, document;
@@ -20,7 +23,15 @@
     const artist = String(value.artist || '').replace(/\s+/gu,' ').trim();
     if (!noAudio && (!artist || artist.length > 200)) throw new Error('Укажите имя исполнителя (до 200 символов).');
     let documentUrl = String(value.documentUrl || '').trim();
-    if (!noText) {
+    const textMode = value.textMode || 'document';
+    const quoteReference = String(value.quoteReference || '').trim();
+    const customText = String(value.customText || '').trim();
+    if (!['document','quote','manual'].includes(textMode)) throw new Error('Выберите источник текста.');
+    if (!noText && textMode === 'quote' && (!quoteReference || quoteReference.length > 200))
+      throw new Error('Укажите слово или фразу для поиска цитат (до 200 символов).');
+    if (!noText && textMode === 'manual' && (!customText || customText.length > 12000))
+      throw new Error('Введите текст для всех постов (до 12000 символов).');
+    if (!noText && textMode === 'document') {
       try { document = new URL(documentUrl); }
       catch { throw new Error('Укажите ссылку на Google Документ.'); }
       const id = document.pathname.match(/^\/document\/(?:u\/\d+\/)?d\/([a-zA-Z0-9_-]+)(?:\/|$)/u)?.[1];
@@ -28,7 +39,7 @@
         throw new Error('Нужна ссылка вида https://docs.google.com/document/d/ID/edit.');
       documentUrl = `https://docs.google.com/document/d/${id}/edit`;
     }
-    return {communityUrl:`${community.origin}/${slug}`,artist,documentUrl,noAudio,noText};
+    return {communityUrl:`${community.origin}/${slug}`,artist,documentUrl,noAudio,noText,textMode,quoteReference,customText};
   }
   const documentExport = settings => normalizeSettings(settings).documentUrl.replace(/\/edit$/u,'/export?format=html');
   async function loadSettings() {
@@ -78,5 +89,5 @@
     if (numeric && numeric !== id) throw new Error('ID открытого сообщества не совпадает со ссылкой в настройках.');
     return {owner:`-${id}`,path,name,origin:location.origin};
   }
-  globalThis.AZVK = {defaults,normalizeSettings,documentExport,loadSettings,matchesCommunity,resolveCommunity};
+  globalThis.AZVK = {version:"0.7.0",defaults,normalizeSettings,documentExport,loadSettings,matchesCommunity,resolveCommunity};
 })();

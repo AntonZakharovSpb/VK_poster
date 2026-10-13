@@ -115,12 +115,36 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
       if (!fromVK) throw new Error('Публикация доступна только из VK.');
       return jobCommand(message, sender);
     }
-    if (message.type === 'lyrics') {
+    if (['lyrics','quotes'].includes(message.type)) {
       if (!fromVK) throw new Error('Запрос должен поступить из вкладки VK.');
       const {batch} = await chrome.storage.local.get('batch');
       if (message.batchId && (!batch?.enabled || batch.id !== message.batchId || batch.tabId !== sender.tab.id))
         throw new Error('Устаревший сеанс партии.');
       const settings = message.batchId ? batch.settings || await AZVK.loadSettings() : await AZVK.loadSettings();
+      if (message.type === 'quotes') {
+        if (settings.noText || settings.textMode !== 'quote') throw new Error('Режим цитат не включён.');
+        const base = 'https://ru.wikiquote.org';
+        const reference = settings.quoteReference;
+        const urls = [base+'/wiki/'+encodeURIComponent(reference.replace(/ /gu,'_'))];
+        if (message.search === true) {
+          const search = await fetchLimited(base+'/w/index.php?title=Special:Search&search='+encodeURIComponent(reference)+'&limit=5&ns0=1&fulltext=1',2_000_000);
+          const html = new TextDecoder().decode(search.data);
+          urls.length = 0;
+          for (const match of html.matchAll(/class="mw-search-result-heading"[^>]*>\s*<a[^>]*href="([^"#]+)"/gu)) {
+            const url = new URL(match[1].replace(/&amp;/gu,'&'),base);
+            if (url.origin === base && url.pathname.startsWith('/wiki/')) urls.push(url.href);
+            if (urls.length === 4) break;
+          }
+        }
+        const pages = [];
+        for (const url of [...new Set(urls)]) {
+          try {
+            const result = await fetchLimited(url,2_000_000);
+            pages.push({url,html:new TextDecoder().decode(result.data)});
+          } catch (error) { if (!message.search && !/HTTP 404/u.test(error.message)) throw error; }
+        }
+        return {pages};
+      }
       const result = await fetchLimited(AZVK.documentExport(settings), 2_000_000);
       return {html: new TextDecoder().decode(result.data)};
     }

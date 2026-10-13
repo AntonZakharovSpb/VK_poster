@@ -64,9 +64,9 @@ class ExtensionTests(unittest.TestCase):
         self.assertEqual(len(result), 2)
         self.assertEqual(result[0]['parts'], ['Строка 1\nСтрока 2','Другой куплет\nЕщё строка'])
         first=self.page.evaluate('(html)=>TriSloga.chooseSongExcerpt(html,()=>0)',html)
-        self.assertEqual(first, {'title':'Первая песня','text':'Строка 1\nСтрока 2\n\nТри слога - Первая песня'})
+        self.assertEqual(first, {'title':'Первая песня','text':'Строка 1\nСтрока 2\n\nТри Слога - Первая песня'})
         second=self.page.evaluate('(html)=>TriSloga.chooseSongExcerpt(html,()=>0.99)',html)
-        self.assertEqual(second['text'],'Весь текст без пустых строк\n\nТри слога - Вторая песня')
+        self.assertEqual(second['text'],'Весь текст без пустых строк\n\nТри Слога - Вторая песня')
 
     def test_song_matching_handles_versions_typos_and_unrelated_tracks(self):
         self.content('<div></div>')
@@ -586,7 +586,7 @@ class ExtensionTests(unittest.TestCase):
         self.page.wait_for_function("document.getElementById('status').textContent.includes('из 5')")
         calls=self.page.evaluate('calls')
         self.assertEqual(calls[-1], {'type':'batchStart','amount':5,'intervalSeconds':3,'settings':self.page.evaluate('fixtureSettings')})
-        self.assertEqual(self.page.locator('input:not([type=checkbox])').count(),5)
+        self.assertEqual(self.page.locator('input:not([type=checkbox]):visible').count(),5)
         self.page.locator('#disable').click()
         self.page.wait_for_function("calls.some(c=>c.type==='batchStop')")
 
@@ -702,7 +702,7 @@ class ExtensionTests(unittest.TestCase):
         self.assertEqual(self.page.locator('input[type=file]').count(),0)
         self.assertFalse(any('вкладке Фото' in line or 'служебной вкладке' in line for line in self.page.evaluate('TriSloga.state.logs')))
         posted=self.page.locator('#post').text_content()
-        self.assertRegex(posted,r'^Первая строка песни\.\nВторая строка песни\.\n{2,3}Три слога - Song$')
+        self.assertRegex(posted,r'^Первая строка песни\.\nВторая строка песни\.\n{2,3}Три Слога - Song$')
         self.assertEqual(self.page.evaluate('window.nextCount'),1)
         self.assertEqual(self.page.get_by_role('textbox',name='Написать комментарий').inner_text(),'untouched comment')
         logs=self.page.evaluate('TriSloga.state.logs')

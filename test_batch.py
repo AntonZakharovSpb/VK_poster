@@ -210,7 +210,7 @@ class BatchPageTests(unittest.TestCase):
         self.assertIsNone(self.page.evaluate('window.publishCount'))
         self.assertEqual(self.page.evaluate('beginAttempts.length'),3)
         self.assertGreaterEqual(saved[1]['time']-saved[0]['time'],1000)
-        self.assertTrue(all('Три слога - Song' in p['text'] for p in saved))
+        self.assertTrue(all('Три Слога - Song' in p['text'] for p in saved))
 
     def test_approved_batch_waits_then_creates_remaining_without_repeating_date(self):
         self.scheduled_fixture()

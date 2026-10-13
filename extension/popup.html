@@ -1,15 +1,20 @@
 <!doctype html>
 <html lang="ru"><head><meta charset="utf-8"><title>AZ_vk_poster</title><link rel="stylesheet" href="popup.css"></head>
 <body>
-<header><span class="mark">AZ</span><div><h1>AZ_vk_poster</h1><p>Партия отложенных публикаций VK</p></div></header>
+<header><span class="mark">AZ</span><div><h1>AZ_vk_poster <small id="version"></small></h1><p>Партия отложенных публикаций VK</p></div></header>
 <label for="communityUrl">Ссылка на сообщество VK</label>
 <input id="communityUrl" type="url" placeholder="https://vk.ru/club123" autocomplete="off">
 <div class="setting-heading"><label for="artist">Исполнитель для прикрепленных треков</label><label class="check"><input id="noAudio" type="checkbox">Без аудио</label></div>
 <p class="hint artist-default">по умолчанию группа Три слога</p>
 <input id="artist" type="text" value="Три слога" maxlength="200" autocomplete="off">
-<div class="setting-heading"><label for="documentUrl">Ссылка на Google Документ с текстами</label><label class="check"><input id="noText" type="checkbox">Без текста</label></div>
+<div class="setting-heading"><label for="textMode">Текст публикаций</label><label class="check"><input id="noText" type="checkbox">Без текста</label></div>
+<select id="textMode"><option value="document">Документ по ссылке</option><option value="quote">Случайная цитата из интернета</option><option value="manual">Один текст для всех постов</option></select>
+<div id="documentFields"><label for="documentUrl">Ссылка на Google Документ с текстами</label>
 <input id="documentUrl" type="url" placeholder="https://docs.google.com/document/d/…/edit" autocomplete="off">
 <p class="hint">Доступ к документу — по ссылке. Песни — заголовки, куплеты разделены пустыми строками.</p>
+</div>
+<div id="quoteFields" hidden><label for="quoteReference">Слово или фраза для цитаты</label><input id="quoteReference" maxlength="200" placeholder="Например: любовь или дружба"><p class="hint">Викицитатник: случайная цитата по теме, автор и ссылка на источник.</p></div>
+<div id="manualFields" hidden><label for="customText">Текст для всех постов</label><textarea id="customText" rows="3" maxlength="12000" placeholder="Введите свой текст"></textarea><p class="hint">Одинаковый текст в каждом посте. Подпись — название сообщества.</p></div>
 <button id="saveSettings">Сохранить настройки</button>
 <div class="batch-fields"><div>
 <label for="amount">Постов (Amount)</label>

@@ -1,5 +1,9 @@
 # Repository workflow
 
+For every requested app change, increment the manifest version and keep
+AZVK.version, popup, diagnostics and user instructions in sync.
+
+
 For each requested change, create a new local branch before editing. Keep changes
 and commits local until the user confirms that the change is OK. After approval,
 push the working branch, merge it into `main`, push `main`, and delete the working
