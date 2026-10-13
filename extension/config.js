@@ -1,7 +1,7 @@
 (() => {
   if (globalThis.AZVK) return;
   const defaults = Object.freeze({
-    communityUrl: 'https://vk.ru/tri_sloga_band',
+    communityUrl: '',
     artist: 'Три слога',
     documentUrl: 'https://docs.google.com/document/d/1P-uauTVZ_u8GkYct3f7UN__g6pTFS8y-/edit'
   });

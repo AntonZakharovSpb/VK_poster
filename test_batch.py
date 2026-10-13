@@ -1,5 +1,6 @@
 """Offline scheduling/CAPTCHA fixtures; never sends a post to real VK."""
 import unittest
+from datetime import datetime
 from pathlib import Path
 import test_extension
 import test_scheduler
@@ -124,17 +125,17 @@ class BatchPageTests(unittest.TestCase):
     def test_inspection_message_reads_queue_and_checks_requested_post(self):
         self.content('''<div id=post-220995299_1><div class=post_header>Три Слога<span>8 окт 2026 в 22:39</span></div><p>test.</p></div>''')
         self.page.evaluate("history.replaceState(null,'','/wall-220995299?postponed=1')")
-        response=self.page.evaluate('''()=>new Promise(resolve=>testListeners[0]({type:'inspectPending',batch:{id:'fixture',settings:AZVK.defaults,community:{owner:'-220995299',path:'/tri_sloga_band',name:'Три Слога',origin:'https://vk.ru'}},text:'test.',date:1791488340000},{id:'test-extension'},resolve))''')
+        response=self.page.evaluate('''()=>new Promise(resolve=>testListeners[0]({type:'inspectPending',batch:{id:'fixture',settings:fixtureSettings,community:{owner:'-220995299',path:'/tri_sloga_band',name:'Три Слога',origin:'https://vk.ru'}},text:'test.',date:1791488340000},{id:'test-extension'},resolve))''')
         self.assertTrue(response['ok'])
         self.assertTrue(response['found'])
 
     def test_inspection_normalizes_whitespace_and_records_mismatch_details(self):
         self.content('''<div id=post-220995299_1><span class=post_date>15 окт 2026 в 10:39</span><p>Текст   первой\n строки</p></div>''')
         self.page.evaluate("history.replaceState(null,'','/wall-220995299?postponed=1')")
-        response=self.page.evaluate('''()=>new Promise(resolve=>testListeners[0]({type:'inspectPending',batch:{id:'fixture',settings:AZVK.defaults,community:{owner:'-220995299',path:'/tri_sloga_band',name:'Три Слога',origin:'https://vk.ru'}},text:'Текст первой строки',date:1792049940000},{id:'test-extension'},resolve))''')
+        response=self.page.evaluate('''()=>new Promise(resolve=>testListeners[0]({type:'inspectPending',batch:{id:'fixture',settings:fixtureSettings,community:{owner:'-220995299',path:'/tri_sloga_band',name:'Три Слога',origin:'https://vk.ru'}},text:'Текст первой строки',date:1792049940000},{id:'test-extension'},resolve))''')
         self.assertTrue(response['found'])
         self.assertTrue(response['verification']['observed'][0]['textMatches'])
-        response=self.page.evaluate('''()=>new Promise(resolve=>testListeners[0]({type:'inspectPending',batch:{id:'fixture',settings:AZVK.defaults,community:{owner:'-220995299',path:'/tri_sloga_band',name:'Три Слога',origin:'https://vk.ru'}},text:'Текст первой строки',date:1792136340000},{id:'test-extension'},resolve))''')
+        response=self.page.evaluate('''()=>new Promise(resolve=>testListeners[0]({type:'inspectPending',batch:{id:'fixture',settings:fixtureSettings,community:{owner:'-220995299',path:'/tri_sloga_band',name:'Три Слога',origin:'https://vk.ru'}},text:'Текст первой строки',date:1792136340000},{id:'test-extension'},resolve))''')
         self.assertFalse(response['found'])
         self.assertEqual(response['verification']['observed'][0]['date'],1792049940000)
 
@@ -144,6 +145,29 @@ class BatchPageTests(unittest.TestCase):
         self.page.set_content('<button>Отложенные</button><div data-testid=scheduled-posts><article data-testid=post>No date</article></div>')
         error=self.page.evaluate('async()=>{try{await TriSloga.latestPendingDate()}catch(e){return e.message}}')
         self.assertIn('прочитать дату',error)
+
+    def test_empty_wall_marker_from_diagnostics_returns_empty_queue(self):
+        self.content('<button data-testid=posting_create_post_button>Создать пост</button><div data-testid=empty_wall></div>')
+        self.page.locator('[data-testid=empty_wall]').evaluate("el=>el.style.cssText='width:200px;height:100px'")
+        self.page.evaluate("history.replaceState(null,'','/wall-220995299?postponed=1')")
+        response=self.page.evaluate('''()=>new Promise(resolve=>testListeners[0]({type:'inspectPending',batch:{id:'fixture',settings:fixtureSettings,community:{owner:'-220995299',path:'/tri_sloga_band',name:'Три Слога',origin:'https://vk.ru'}}},{id:'test-extension'},resolve))''')
+        self.assertTrue(response['ok'],response)
+        self.assertIsNone(response['latest'])
+
+    def test_hidden_empty_wall_marker_does_not_mask_an_unreadable_queue(self):
+        self.content('<button>Отложенные</button><div data-testid=scheduled-posts style=height:100px><div data-testid=empty_wall hidden></div></div>')
+        error=self.page.evaluate('async()=>{try{await TriSloga.latestPendingDate()}catch(e){return e.message}}')
+        self.assertIn('пуст ли список',error)
+
+    def test_empty_wall_schedules_first_post_tomorrow_at_current_moscow_time(self):
+        self.scheduled_fixture()
+        self.page.locator('#pendingList').evaluate("el=>el.innerHTML='<div data-testid=empty_wall style=height:100px></div>'")
+        self.page.clock.set_fixed_time(datetime.fromisoformat('2026-10-13T13:51:49+03:00'))
+        self.page.evaluate("TriSloga.runBatch({id:'empty-queue',amount:1,completed:0,intervalSeconds:1})")
+        expected=int(datetime.fromisoformat('2026-10-14T13:51:00+03:00').timestamp()*1000)
+        self.assertEqual(self.page.evaluate('savedPosts.map(post=>post.timestamp)'),[expected])
+        self.assertEqual(self.page.evaluate('beginAttempts.length'),1)
+        self.assertIsNone(self.page.evaluate('window.publishCount'))
 
     def scheduled_fixture(self):
         self.workflow_fixture()

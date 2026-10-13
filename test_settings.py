@@ -16,6 +16,18 @@ class SettingsPageTests(unittest.TestCase):
     content=test_extension.ExtensionTests.content
     workflow_fixture=test_extension.ExtensionTests.workflow_fixture
 
+    def test_fresh_popup_requires_community_instead_of_prefilling_tri_sloga(self):
+        self.page.set_content((EXT/'popup.html').read_text(encoding='utf-8'))
+        self.page.evaluate('''()=>{testStorage={};window.calls=[];chrome.storage.onChanged={addListener:()=>{}};
+          chrome.runtime.sendMessage=async msg=>{calls.push(msg);return {ok:true};};}''')
+        self.page.add_script_tag(path=str(EXT/'popup.js'))
+        self.page.wait_for_function('settingsLoaded')
+        self.assertEqual(self.page.locator('#communityUrl').input_value(),'')
+        self.assertEqual(self.page.locator('#artist').input_value(),'Три слога')
+        self.page.locator('#enable').click()
+        self.assertFalse(self.page.evaluate('calls.some(msg=>msg.type==="batchStart")'))
+        self.assertIn('ссылку на сообщество',self.page.locator('#status').inner_text())
+
     def test_settings_normalize_shared_links_and_keep_default_artist(self):
         value={**CUSTOM,'communityUrl':'https://vk.com/club123456/?from=menu','artist':'  Другой   артист  ',
                'documentUrl':'https://docs.google.com/document/u/0/d/custom_doc/edit?usp=sharing#heading=h.1'}

@@ -23,7 +23,8 @@ class SchedulerTests(unittest.TestCase):
         self.page.goto('https://vk.ru/tri_sloga_band')
         self.page.add_script_tag(path=str(EXT/'config.js'))
         self.page.evaluate('''() => {
-          window.store={}; window.calls=[]; window.alarms={}; window.listeners={};
+          window.fixtureSettings={...AZVK.defaults,communityUrl:'https://vk.ru/tri_sloga_band'};
+          window.store={settings:fixtureSettings}; window.calls=[]; window.alarms={}; window.listeners={};
           window.chrome={
             storage:{local:{get:async keys=>Object.fromEntries((Array.isArray(keys)?keys:[keys]).map(k=>[k,store[k]])),
               set:async data=>Object.assign(store,data),remove:async key=>{delete store[key]}}},
@@ -189,7 +190,7 @@ class SchedulerTests(unittest.TestCase):
         self.page.evaluate('()=>{waitForCommunity=async()=>{}}')
         self.page.evaluate('scheduleCommand({type:"scheduleRetry"},{})')
         self.assertEqual(self.page.evaluate('calls.filter(c=>c.type==="start").length'), 1)
-        self.assertTrue(self.page.evaluate('calls.some(c=>c.type==="tab" && c.url===AZVK.defaults.communityUrl)'))
+        self.assertTrue(self.page.evaluate('calls.some(c=>c.type==="tab" && c.url===fixtureSettings.communityUrl)'))
         self.assertAlmostEqual(self.page.evaluate('(store.schedule.nextRunAt-Date.now())/3600000'),2,places=3)
         self.assertTrue(self.page.evaluate('store.scheduleStatus.running'))
 
@@ -252,7 +253,7 @@ class SchedulerTests(unittest.TestCase):
           chrome.windows.getAll=async()=>[];
         }''')
         self.page.evaluate('scheduleCommand({type:"scheduleRetry"},{})')
-        self.assertEqual(self.page.evaluate('calls.filter(c=>c.type==="normal" && c.url===AZVK.defaults.communityUrl).length'),1)
+        self.assertEqual(self.page.evaluate('calls.filter(c=>c.type==="normal" && c.url===fixtureSettings.communityUrl).length'),1)
         self.assertFalse(self.page.evaluate('!!store.browserClosed'))
         self.assertEqual(self.page.evaluate('calls.filter(c=>c.type==="start").length'),1)
 

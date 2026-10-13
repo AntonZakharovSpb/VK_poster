@@ -791,7 +791,7 @@
         if(value===null) throw new Error('Не удалось прочитать дату отложенной записи. Нужна диагностика формата VK.');
         latest=latest===null?value:Math.max(latest,value);
       }
-      if(!posts.length && /нет отложенных|отложенных (?:записей|постов) нет|пока нет|нет записей|отложенные посты\s*0(?:\D|$)/iu.test(root.textContent)) return null;
+      if(!posts.length && (all(root,'[data-testid="empty_wall"]').some(visible) || /нет отложенных|отложенных (?:записей|постов) нет|пока нет|нет записей|отложенные посты\s*0(?:\D|$)/iu.test(root.textContent))) return null;
       const more=control(root,/^(Показать ещё|Показать еще|Ещё|Еще)$/u).filter(visible);
       if(more.length===1) await click(more[0]);
       else {

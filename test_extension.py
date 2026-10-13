@@ -26,7 +26,8 @@ class ExtensionTests(unittest.TestCase):
         self.page.goto('https://vk.ru/tri_sloga_band')
         self.page.add_script_tag(path=str(EXT/'config.js'))
         self.page.evaluate('''() => {
-          window.testStorage = {};
+          window.fixtureSettings = {...AZVK.defaults,communityUrl:'https://vk.ru/tri_sloga_band'};
+          window.testStorage = {settings:fixtureSettings};
           window.testListeners = [];
           window.chrome = {runtime: {id:'test-extension', onMessage:{addListener(fn){testListeners.push(fn)}},
             sendMessage:async()=>({ok:true})}, storage:{local:{
@@ -45,7 +46,7 @@ class ExtensionTests(unittest.TestCase):
         self.page.set_content(html)
         self.page.add_script_tag(path=str(EXT/'config.js'))
         self.page.add_script_tag(path=str(EXT/'content.js'))
-        self.page.evaluate("TriSloga.configure(AZVK.defaults,{owner:'-220995299',path:'/tri_sloga_band',name:'Три Слога',origin:'https://vk.ru'})")
+        self.page.evaluate("TriSloga.configure(fixtureSettings,{owner:'-220995299',path:'/tri_sloga_band',name:'Три Слога',origin:'https://vk.ru'})")
 
     def test_only_community_photo_tab_media_is_selected(self):
         self.content('''
@@ -575,12 +576,13 @@ class ExtensionTests(unittest.TestCase):
           };
         }""")
         self.page.add_script_tag(path=str(EXT/'popup.js'))
+        self.page.locator('#communityUrl').fill('https://vk.ru/tri_sloga_band')
         self.page.locator('#amount').fill('5')
         self.page.locator('#interval').fill('3')
         self.page.locator('#enable').click()
         self.page.wait_for_function("document.getElementById('status').textContent.includes('из 5')")
         calls=self.page.evaluate('calls')
-        self.assertEqual(calls[-1], {'type':'batchStart','amount':5,'intervalSeconds':3,'settings':self.page.evaluate('AZVK.defaults')})
+        self.assertEqual(calls[-1], {'type':'batchStart','amount':5,'intervalSeconds':3,'settings':self.page.evaluate('fixtureSettings')})
         self.assertEqual(self.page.locator('input').count(),5)
         self.page.locator('#disable').click()
         self.page.wait_for_function("calls.some(c=>c.type==='batchStop')")
