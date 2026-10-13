@@ -89,5 +89,5 @@
     if (numeric && numeric !== id) throw new Error('ID открытого сообщества не совпадает со ссылкой в настройках.');
     return {owner:`-${id}`,path,name,origin:location.origin};
   }
-  globalThis.AZVK = {version:"0.7.1",defaults,normalizeSettings,documentExport,loadSettings,matchesCommunity,resolveCommunity};
+  globalThis.AZVK = {version:"0.7.2",defaults,normalizeSettings,documentExport,loadSettings,matchesCommunity,resolveCommunity};
 })();

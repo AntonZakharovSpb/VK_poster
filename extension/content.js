@@ -717,18 +717,20 @@
     for (const table of doc.querySelectorAll('.mw-parser-output table.q')) {
       const textCell = table.querySelector('.q-text td:last-child');
       const authorCell = table.querySelector('.q-author td:last-child');
-      if (!textCell || !authorCell || !/^\s*—/u.test(authorCell.textContent)) continue;
-      const authorLink = authorCell.querySelector('a');
+      if (!textCell) continue;
+      const authorLink = authorCell?.querySelector('a');
+      let author = authorCell && /^\s*—/u.test(authorCell.textContent)
+        ? normalize(authorLink?.textContent || authorCell.textContent.replace(/^\s*—\s*/u,'').split(',')[0]) : '';
       if (authorLink?.getAttribute('href')) {
         const authorUrl = new URL(authorLink.getAttribute('href'),url);
-        if (authorUrl.origin !== url.origin || !authorUrl.pathname.startsWith('/wiki/')) continue;
+        if (authorUrl.origin !== url.origin || !authorUrl.pathname.startsWith('/wiki/')) author = '';
       }
-      const author = normalize(authorLink?.textContent || authorCell.textContent.replace(/^\s*—\s*/u,'').split(',')[0]);
+      if (/неизвест|аноним|источник|народная|пословица/iu.test(author) || author.length>180) author = '';
       const clone = textCell.cloneNode(true);
       for (const el of clone.querySelectorAll('sup,.reference,.mw-editsection')) el.remove();
       for (const br of clone.querySelectorAll('br')) br.replaceWith(doc.createTextNode('\n'));
       const text = clone.textContent.replace(/\u00a0/gu,' ').trim();
-      if (!author || /неизвест|аноним|источник|народная|пословица/iu.test(author) || author.length>180 || !text || text.length>3000) continue;
+      if (!text || text.length>3000) continue;
       if (!wanted || (!topic.includes(wanted) && !text.toLocaleLowerCase('ru').includes(wanted))) continue;
       quotes.push({text,author,source:url.href});
     }
@@ -744,10 +746,10 @@
         quotes = (result.pages || []).flatMap(page=>parseQuotes(page.html,page.url,settings.quoteReference));
         if (quotes.length) break;
       }
-      if (!quotes.length) throw new Error('Не найдена цитата по этой теме с указанным автором. Попробуйте другое слово или фразу.');
+      if (!quotes.length) throw new Error('Не найдена цитата по этой теме. Попробуйте другое слово или фразу.');
       const quote = quotes[Math.floor(Math.random()*quotes.length)];
-      log(`Цитата: ${quote.author}; источник: ${quote.source}`);
-      return `${quote.text}\n\n— ${quote.author}\n\nИсточник: ${quote.source}`;
+      log(`Цитата${quote.author ? ': '+quote.author : ''}; источник: ${quote.source}`);
+      return `${quote.text}${quote.author ? '\n\n— '+quote.author : ''}\n\nИсточник: ${quote.source}`;
     }
     const result = await message({type: 'lyrics',batchId:state.batch?.id});
     const prepared = chooseSongExcerpt(result.html);

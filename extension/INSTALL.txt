@@ -1,7 +1,7 @@
-AZ_vk_poster — Chrome extension 0.7.1
+AZ_vk_poster — Chrome extension 0.7.2
 
 Full new-user guide: ../USER_GUIDE.txt (Russian).
-Text modes: Google Docs link, internet quote by topic with author and source,
+Text modes: Google Docs link, internet quote by topic with source (author optional),
 or one custom text for all posts. Choose the mode in «Текст публикаций».
 Document footer: community name + heading, if present.
 Quote footer: source link. Custom text footer: community name.

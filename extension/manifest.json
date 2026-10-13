@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "AZ_vk_poster",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "description": "Отложенные посты VK: фото сообщества, музыка исполнителя и текст из документа, цитата по теме или ваш текст.",
   "permissions": [
     "storage",

@@ -12,6 +12,7 @@ QUOTE = '''<h1 id=firstHeading>Дружба</h1><div class=mw-parser-output>
 <table class=q><tr class=q-text><td></td><td>Без автора</td></tr></table>
 <table class=q><tr class=q-text><td></td><td>Ещё текст</td></tr>
 <tr class=q-author><td></td><td>— Неизвестный автор</td></tr></table></div>'''
+AUTHORED_QUOTE = QUOTE.split('</table>',1)[0]+'</table></div>'
 
 class TextModeTests(unittest.TestCase):
     setUpClass = classmethod(test_extension.ExtensionTests.setUpClass.__func__)
@@ -34,13 +35,14 @@ class TextModeTests(unittest.TestCase):
         self.assertEqual(text,'Первая строка\nВторая строка\n\nДругое сообщество')
         self.assertEqual(text,self.page.evaluate('TriSloga.preparePostText()'))
 
-    def test_quotes_filter_unknown_authors_unrelated_text_and_untrusted_sources(self):
+    def test_quotes_allow_missing_authors_but_filter_unrelated_and_untrusted_sources(self):
         self.content('<p>fixture</p>')
         value={'html':QUOTE,'url':'https://ru.wikiquote.org/wiki/Дружба','reference':'дружба'}
         quotes=self.page.evaluate('v=>TriSloga.parseQuotes(v.html,v.url,v.reference)',value)
-        self.assertEqual(len(quotes),1)
+        self.assertEqual(len(quotes),3)
         self.assertEqual(quotes[0]['author'],'Автор Один')
         self.assertEqual(quotes[0]['text'],'Дружба помогает жить.')
+        self.assertEqual([quote['author'] for quote in quotes[1:]],['',''])
         for overrides in [{'reference':'музыка'},{'url':'https://example.com/wiki/Дружба'}]:
             self.assertEqual(self.page.evaluate('v=>TriSloga.parseQuotes(v.html,v.url,v.reference)',{**value,**overrides}),[])
 
@@ -48,7 +50,7 @@ class TextModeTests(unittest.TestCase):
         self.content('<p>fixture</p>')
         self.configure(textMode='quote',quoteReference='дружба',documentUrl='')
         self.page.evaluate('''html=>{window.quoteCalls=[];chrome.runtime.sendMessage=async msg=>{
-          quoteCalls.push(msg);return {ok:true,pages:msg.search?[{url:'https://ru.wikiquote.org/wiki/Friends',html}]:[]};};}''',QUOTE)
+          quoteCalls.push(msg);return {ok:true,pages:msg.search?[{url:'https://ru.wikiquote.org/wiki/Friends',html}]:[]};};}''',AUTHORED_QUOTE)
         text=self.page.evaluate('TriSloga.preparePostText()')
         self.assertIn('— Автор Один',text)
         self.assertTrue(text.endswith('Источник: https://ru.wikiquote.org/wiki/Friends'))
@@ -61,6 +63,30 @@ class TextModeTests(unittest.TestCase):
         self.page.evaluate('chrome.runtime.sendMessage=async()=>({ok:true,pages:[]})')
         error=self.page.evaluate('async()=>{try{await TriSloga.preparePostText()}catch(e){return e.message}}')
         self.assertIn('Не найдена цитата',error)
+
+    def test_authorless_quotes_use_source_without_searching_again(self):
+        self.content('<p>fixture</p>')
+        self.configure(textMode='quote',quoteReference='дружба',documentUrl='')
+        for author_html in ['', '<tr class=q-author><td></td><td>— Неизвестный автор</td></tr>',
+                            '<tr class=q-author><td></td><td>— <a href="https://other.example/book">Источник</a></td></tr>']:
+            with self.subTest(author=author_html):
+                html='<h1 id=firstHeading>Дружба</h1><div class=mw-parser-output><table class=q><tr class=q-text><td></td><td>Цитата без автора.</td></tr>'+author_html+'</table></div>'
+                self.page.evaluate('''html=>{window.quoteCalls=[];chrome.runtime.sendMessage=async msg=>{
+                  quoteCalls.push(msg);if(msg.search)throw Error('Unexpected additional search');
+                  return {ok:true,pages:[{url:'https://ru.wikiquote.org/wiki/Friends',html}]};};}''',html)
+                text=self.page.evaluate('TriSloga.preparePostText()')
+                self.assertEqual(text,'Цитата без автора.\n\nИсточник: https://ru.wikiquote.org/wiki/Friends')
+                self.assertEqual(self.page.evaluate('quoteCalls.map(m=>m.search)'),[False])
+
+    def test_authorless_quote_completes_post_with_source_link(self):
+        self.workflow_fixture(custom=True)
+        self.page.evaluate('''()=>{testStorage.settings={...testStorage.settings,textMode:'quote',
+          quoteReference:'дружба',documentUrl:'',noAudio:true};const send=chrome.runtime.sendMessage;
+          chrome.runtime.sendMessage=async msg=>msg.type==='quotes'?{ok:true,pages:[{
+            url:'https://ru.wikiquote.org/wiki/Friends',html:'<h1 id=firstHeading>Дружба</h1><div class=mw-parser-output><table class=q><tr class=q-text><td></td><td>Цитата без автора.</td></tr></table></div>'}]}:send(msg); }''')
+        result=self.page.evaluate('TriSloga.run({automatic:true,scheduleRunId:"quote-fixture"})')
+        self.assertTrue(result['success'],result)
+        self.assertRegex(self.page.locator('#post').text_content(),r'^Цитата без автора\.\n{2,3}Источник: https://ru\.wikiquote\.org/wiki/Friends$')
 
     def test_plain_export_document_footer_has_no_title(self):
         self.content('<p>fixture</p>')
@@ -146,7 +172,7 @@ class TextModeTests(unittest.TestCase):
                     if(msg.type==='lyrics')throw Error('Unexpected document fetch');
                     if(msg.type==='quotes')return {ok:true,pages:[{url:'https://ru.wikiquote.org/wiki/Friends',html}]};
                     return send(msg);
-                  };}''',{'mode':mode,'html':QUOTE})
+                  };}''',{'mode':mode,'html':AUTHORED_QUOTE})
                 result=self.page.evaluate('TriSloga.run({automatic:true,scheduleRunId:"text-fixture"})')
                 self.assertTrue(result['success'],result)
                 text=self.page.locator('#post').inner_text()
