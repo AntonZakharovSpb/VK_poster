@@ -1,7 +1,14 @@
 (() => {
   if (globalThis.TriSloga) return;
-  const OWNER = '-220995299';
-  const PATH = '/tri_sloga_band';
+  let settings = {...AZVK.defaults};
+  let OWNER = null, PATH = null, NAME = '';
+  function configure(nextSettings,community) {
+    settings = AZVK.normalizeSettings(nextSettings);
+    if (!community || !/^-[1-9]\d*$/u.test(community.owner) || !community.path || !community.name)
+      throw new Error('Не удалось определить выбранное сообщество.');
+    ({owner:OWNER,path:PATH,name:NAME} = community);
+  }
+  const isCommunityName = text => normalize(text).toLocaleLowerCase('ru') === NAME.toLocaleLowerCase('ru');
   const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
   const normalize = text => (text || '').replace(/\s+/g, ' ').trim();
   const visible = el => !!el && !el.closest('[hidden],[aria-hidden="true"]') &&
@@ -94,7 +101,7 @@
       host.style.cssText = 'position:fixed;right:18px;bottom:18px;z-index:2147483647';
       document.documentElement.append(host);
       const root = host.attachShadow({mode: 'open'});
-      root.innerHTML = `<style>:host{font:13px "Segoe UI",sans-serif;color:#17212d}section{width:330px;background:white;border:1px solid #d4dfec;box-shadow:0 8px 32px #17212d25;border-radius:16px;padding:16px}header{display:flex;justify-content:space-between;align-items:center;font-size:16px;font-weight:600}pre{white-space:pre-wrap;overflow:auto;max-height:220px;font:12px/1.6 "Segoe UI",sans-serif;color:#4c5e73}button{border:0;border-radius:8px;padding:8px 10px;background:#e9f1fc;color:#006edd;cursor:pointer;font:12px "Segoe UI"}.actions{display:flex;gap:8px;flex-wrap:wrap}.reset{margin-top:8px}small{color:#657688;font-size:11px}</style><section><header>Три Слога <button id="hide">Скрыть</button></header><pre></pre><div class="actions"><button id="stop">Остановить</button><button id="copy">Копировать журнал</button></div><button class="reset" id="fixed">Исправлено — повторить</button><button class="reset" id="reset">Я проверил стену: разрешить новую попытку</button><p><small>Устраните причину ошибки и нажмите «Исправлено — повторить».</small></p></section>`;
+      root.innerHTML = `<style>:host{font:13px "Segoe UI",sans-serif;color:#17212d}section{width:330px;background:white;border:1px solid #d4dfec;box-shadow:0 8px 32px #17212d25;border-radius:16px;padding:16px}header{display:flex;justify-content:space-between;align-items:center;font-size:16px;font-weight:600}pre{white-space:pre-wrap;overflow:auto;max-height:220px;font:12px/1.6 "Segoe UI",sans-serif;color:#4c5e73}button{border:0;border-radius:8px;padding:8px 10px;background:#e9f1fc;color:#006edd;cursor:pointer;font:12px "Segoe UI"}.actions{display:flex;gap:8px;flex-wrap:wrap}.reset{margin-top:8px}small{color:#657688;font-size:11px}</style><section><header>AZ_vk_poster <button id="hide">Скрыть</button></header><pre></pre><div class="actions"><button id="stop">Остановить</button><button id="copy">Копировать журнал</button></div><button class="reset" id="fixed">Исправлено — повторить</button><button class="reset" id="reset">Я проверил стену: разрешить новую попытку</button><p><small>Устраните причину ошибки и нажмите «Исправлено — повторить».</small></p></section>`;
       root.getElementById('fixed').onclick = async () => {
         if (state.running) return;
         const {publicationAttempt} = await chrome.storage.local.get('publicationAttempt');
@@ -158,14 +165,24 @@
     const tab = await until(() => all(document, `[data-testid="group_tab_${name}"]`).find(visible), `вкладка ${name}`);
     await click(tab);
     await delay(1000);
-    if (location.pathname !== PATH) throw new Error('VK открыл другую страницу. Откройте сообщество и запустите снова.');
+    if (location.pathname.replace(/\/$/u,'') !== PATH) throw new Error('VK открыл другую страницу. Откройте сообщество и запустите снова.');
   }
   async function collectMedia() {
     state.stage = 'community music';
+    state.audio = {id:null,title:state.songTitle || '',artist:settings.artist};
+    if (!all(document,'[data-testid="group_tab_audios"]').some(visible)) {
+      log('В сообществе нет вкладки музыки. Использую поиск выбранного исполнителя.');
+      return;
+    }
     await section('audios');
-    const audios = await until(() => { const items = audioCandidates(); return items.length ? items : null; }, 'песни сообщества');
-    state.audio = audios[Math.floor(Math.random() * audios.length)];
-    log(`Резервная песня на случай пустого поиска: ${state.audio.artist} — ${state.audio.title}.`);
+    try {
+      const audios = await until(() => { const items = audioCandidates(); return items.length ? items : null; }, 'песни сообщества', 5000);
+      state.audio = audios[Math.floor(Math.random() * audios.length)];
+      log(`Резервная песня на случай пустого поиска: ${state.audio.artist} — ${state.audio.title}.`);
+    } catch (error) {
+      if (state.stopped) throw error;
+      log('В сообществе нет доступных песен. Использую поиск выбранного исполнителя.');
+    }
     await section('wall');
   }
 
@@ -194,7 +211,7 @@
     if (composerCandidates().length) throw new Error('Уже открыт редактор с черновиком. Завершите или закройте его перед запуском.');
     const create = await until(() => all(document, '[data-testid="group_publish_create_button"]').find(visible), 'кнопка «Создать»');
     state.communityContext = !!create.closest('[data-testid="group_publish_block"]') &&
-      location.pathname === PATH && all(document,'[data-testid="group-name"]').some(el=>/^Три Слога$/iu.test(normalize(el.textContent))) &&
+      location.pathname.replace(/\/$/u,'') === PATH && all(document,'[data-testid="group-name"],.group_name,#group_name,.page_name').some(el=>isCommunityName(el.textContent)) &&
       all(document,'[data-testid="group_manage_menu_manage"]').some(visible);
     await click(create);
     const detect = () => {
@@ -365,7 +382,7 @@
     }, 'пункт «Фото VK»');
     await click(photoOption);
     let picker = await until(nativePhotoPicker, 'окно выбора фотографии из VK');
-    const group = control(picker, /^Три Слога$/iu).filter(visible);
+    const group = control(picker,{test:isCommunityName}).filter(visible);
     if (group.length === 1) { await click(group[0]); await delay(400); }
     let cards = await until(() => {
       const current = nativePhotoPicker();
@@ -465,14 +482,19 @@
       artist.toLocaleLowerCase('ru') === audio.artist.toLocaleLowerCase('ru') && (!audio.duration || duration === audio.duration);
   }
   function selectedAudioRow(picker) {
-    const matches = audioRows(picker).filter(row => matchesAudio(row, state.audio));
+    const matches = audioRows(picker).filter(row => matchesAudio(row, state.audio) && artistMatches(audioMetadata(row).artist));
     const outer = matches.filter(row => !matches.some(other => other !== row && other.contains(row)));
     return outer[0];
   }
   function firstSearchAudio(picker) {
     const rows = audioRows(picker);
     const outer = rows.filter(row => !rows.some(other => other !== row && other.contains(row)));
-    return outer.find(row => audioMetadata(row).title && audioMetadata(row).artist);
+    return outer.find(row => audioMetadata(row).title && artistMatches(audioMetadata(row).artist));
+  }
+  function artistMatches(credit) {
+    const artist = settings.artist.replace(/[.*+?^${}()|[\]\\]/gu,'\\$&');
+    const boundary = '(?:[,;&/]|\\bfeat\\.?|\\bft\\.?)';
+    return new RegExp(`(?:^|${boundary})\\s*${artist}\\s*(?=$|${boundary})`,'iu').test(normalize(credit));
   }
   function firstBandSearchAudio(picker) {
     const rows = audioRows(picker);
@@ -480,7 +502,7 @@
       .find(row => {
         const audio = audioMetadata(row);
         return songSimilarity(state.songTitle, audio.title) > 0 &&
-          /(?:^|[,;&/])\s*три\s+слога\s*(?=$|[,;&/])/iu.test(audio.artist);
+          artistMatches(audio.artist);
       });
   }
   function audioMetadata(row) {
@@ -502,31 +524,31 @@
     await click(await attachmentControl('audio'));
     await delay(500);
     const picker = musicPicker();
-    const community = control(picker, /^Три Слога$/iu).filter(visible);
+    const community = control(picker,{test:isCommunityName}).filter(visible);
     if (community.length === 1) await click(community[0]);
     let row;
     if (state.songTitle) {
       const search = one(all(picker, 'input').filter(el => (el.dataset.testid === 'posting_audio_search_audio_input' || /поиск|найти/iu.test(el.placeholder || el.getAttribute('aria-label') || '')) && visible(el)), 'поиск в выборе музыки');
-      log(`Ищу музыку по названию: ${state.songTitle}.`);
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(search, state.songTitle);
+      log(`Ищу песню: ${settings.artist} — ${state.songTitle}.`);
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(search, `${settings.artist} ${state.songTitle}`.trim());
       search.dispatchEvent(new Event('input', {bubbles:true}));
       await delay(1200);
-      try { row = await until(() => firstBandSearchAudio(picker), 'песня исполнителя Три слога в поиске', 10000); }
+      try { row = await until(() => firstBandSearchAudio(picker), `песня исполнителя ${settings.artist} в поиске`, 10000); }
       catch (error) {
         if (state.stopped) throw error;
-        log('В поиске нет исполнителя Три слога. Добавляю резервную песню сообщества.');
+        log(`В поиске нет подходящей песни исполнителя ${settings.artist}. Добавляю резервную песню сообщества.`);
       }
       if (row) {
         const chosen = audioMetadata(row);
         state.sourceAudio = {...state.audio};
         state.audio = {...chosen, id: chosen.id || `search-result:${crypto.randomUUID()}`};
-        log(`Выбрана песня исполнителя Три слога из поиска: ${chosen.artist} — ${chosen.title}.`);
+        log(`Выбрана песня исполнителя ${settings.artist} из поиска: ${chosen.artist} — ${chosen.title}.`);
       }
     }
     if (!row && !state.songTitle) row = selectedAudioRow(picker);
     if (!row) {
       const search = one(all(picker, 'input').filter(el => (el.dataset.testid === 'posting_audio_search_audio_input' || /поиск|найти/iu.test(el.placeholder || el.getAttribute('aria-label') || '')) && visible(el)), 'поиск в выборе музыки');
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(search, `${state.audio.artist} ${state.audio.title}`.trim());
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(search, `${settings.artist} ${state.audio.title}`.trim());
       search.dispatchEvent(new Event('input', {bubbles: true}));
       await delay(1200);
       try { row = await until(() => selectedAudioRow(picker), 'точная песня в поиске', 3000); }
@@ -536,10 +558,10 @@
         if (!row) {
           const baseTitle = state.audio.title.replace(/\s*[\[(].*?[\])]\s*/gu, ' ')
             .replace(/\s*(?:[-–—]\s*)?(?:альбомная|альбомный|сингловая|сингловый|album|single)\s*(?:версия|version)?\s*$/iu, '').trim();
-          Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(search, `${state.audio.artist} ${baseTitle}`.trim());
+          Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(search, `${settings.artist} ${baseTitle}`.trim());
           search.dispatchEvent(new Event('input', {bubbles: true}));
           await delay(1200);
-          row = await until(() => selectedAudioRow(picker) || firstSearchAudio(picker), 'результаты поиска резервной песни');
+          row = await until(() => selectedAudioRow(picker) || firstSearchAudio(picker), `песня исполнителя ${settings.artist}`);
         }
         const chosen = audioMetadata(row);
         state.sourceAudio = {...state.audio};
@@ -577,12 +599,15 @@
   function authorVerified(root) {
     const controls = all(root, '[data-testid*="author"],[data-testid*="publisher"],[data-testid*="owner"],.post_from_group,.submit_post_from')
       .filter(el=>visible(el) && !/coowners|coauthors/u.test(el.dataset.testid || ''));
-    if (controls.length) return controls.some(el => el.getAttribute('data-owner-id') === OWNER ||
-      /^Три Слога$/iu.test(normalize(el.textContent)) ||
-      all(el, 'a[href]').some(a => new URL(a.href, location.href).pathname === PATH));
+    if (controls.length) return controls.some(el => {
+      const owner = el.getAttribute('data-owner-id');
+      if (owner) return owner === OWNER;
+      return isCommunityName(el.textContent) ||
+        all(el, 'a[href]').some(a => new URL(a.href, location.href).pathname.replace(/\/$/u,'') === PATH);
+    });
     // Modern group publishing has no author selector. Its target is fixed by
     // the community admin Create block that opened this same posting dialog.
-    return state.communityContext && state.composer?.modern && location.pathname === PATH &&
+    return state.communityContext && state.composer?.modern && location.pathname.replace(/\/$/u,'') === PATH &&
       root.dataset.testid === 'posting_modal_box' && !!root.querySelector('[data-testid="posting_submit_button"]');
   }
   function parseSongs(html) {
@@ -610,7 +635,7 @@
     if (!songs.length) throw new Error('В документе не найдены песни с заголовками и текстом. Проверьте доступ и структуру документа.');
     const song = songs[Math.floor(random() * songs.length)];
     const verse = song.parts.length ? song.parts[Math.floor(random() * song.parts.length)] : song.text;
-    return {title: song.title, text: `${verse}\n\nТри слога - ${song.title}`};
+    return {title: song.title, text: `${verse}\n\n${settings.artist} - ${song.title}`};
   }
   function normalizedSongTitle(title) {
     return normalize(title).toLocaleLowerCase('ru').replace(/ё/gu, 'е')
@@ -648,7 +673,7 @@
   }
   async function preparePostText() {
     state.songTitle = null;
-    const result = await message({type: 'lyrics'});
+    const result = await message({type: 'lyrics',batchId:state.batch?.id});
     const prepared = chooseSongExcerpt(result.html);
     state.songTitle = prepared.title;
     return prepared.text;
@@ -665,7 +690,7 @@
         .map(el=>({type:el.type,testid:el.dataset.testid,value:el.value,placeholder:el.placeholder})),
       page: location.origin + location.pathname + location.hash,
       photo: state.photo?.id, audio: state.audio?.id, sourceAudio: state.sourceAudio,
-      songTitle: state.songTitle,
+      songTitle: state.songTitle, settings, community:{owner:OWNER,path:PATH,name:NAME},
       composerConnected: !!state.composer?.root?.isConnected,
       liveComposerFound: !!currentComposerRoot(), photoSelectionVerified: state.photoSelectionVerified,
       sourcePhoto: state.sourcePhoto,
@@ -735,17 +760,17 @@
     return parsePostDate(post.textContent);
   }
   function scheduledPosts(root) {
-    const posts=all(root,'[data-testid="post"],.wall_item,[id^="post-220995299_"],[data-post-id^="-220995299_"]').filter(visible);
+    const posts=all(root,`[data-testid="post"],.wall_item,[id^="post${OWNER}_"],[data-post-id^="${OWNER}_"]`).filter(visible);
     return posts.filter(post=>!posts.some(other=>other!==post && other.contains(post)));
   }
   function pendingRoot() {
     const root=all(document,'[data-testid="scheduled-posts"],#page_wall_posts,[data-testid="feed-items"],.wall_posts,#wall_postponed').find(visible);
     if(root)return root;
-    if(location.pathname==='/wall-220995299' && new URLSearchParams(location.search).get('postponed')==='1') return document.body;
+    if(location.pathname===`/wall${OWNER}` && new URLSearchParams(location.search).get('postponed')==='1') return document.body;
     return null;
   }
   async function openPending() {
-    if(location.pathname==='/wall-220995299' && new URLSearchParams(location.search).get('postponed')==='1') return until(pendingRoot,'список отложенных записей');
+    if(location.pathname===`/wall${OWNER}` && new URLSearchParams(location.search).get('postponed')==='1') return until(pendingRoot,'список отложенных записей');
     const tab=await until(()=>{
       const matches=all(document,'button,a,[role="tab"],[role="button"]').filter(el=>visible(el)&&/^Отложенные(?: посты)?(?:\s*\(?\d+\)?)?$/u.test(label(el)));
       return matches.length ? one(matches,'вкладка «Отложенные»') : null;
@@ -905,6 +930,7 @@
   }
   async function runBatch(batch) {
     if(state.batchRunning) throw new Error('Партия уже выполняется в этой вкладке.');
+    if (batch.settings && batch.community) configure(batch.settings,batch.community);
     state.batchRunning=true;state.batch=batch;state.batchStopped=false;state.stopped=false;state.captchaPaused=false;
     const heartbeat=setInterval(()=>message({type:'batchHeartbeat',batchId:batch.id}).catch(()=>{}),30000);
     try {
@@ -943,7 +969,7 @@
     } finally {clearInterval(heartbeat);state.batchRunning=false;state.batch=null;state.captchaPaused=false;}
   }
   async function run(options) {
-    if (location.pathname !== PATH || !['vk.ru','vk.com'].includes(location.hostname)) throw new Error('Откройте сообщество Три Слога.');
+    if (!['vk.ru','vk.com'].includes(location.hostname)) throw new Error('Откройте выбранное сообщество.');
     if (state.running) throw new Error('Публикация уже выполняется.');
     state.running = true; state.stopped = false; state.logs = []; state.composer = null;
     state.scheduleRunId = options.scheduleRunId || null;
@@ -962,6 +988,12 @@
       if (!all(document, '#top_profile_link,#l_pr,[data-testid="header-profile-menu-button"]').some(visible)) {
         throw new Error('Войдите в VK в этой вкладке, затем нажмите «Исправлено — повторить».');
       }
+      if (state.batch?.settings && state.batch?.community) configure(state.batch.settings,state.batch.community);
+      else {
+        const saved = await AZVK.loadSettings();
+        configure(saved,AZVK.resolveCommunity(saved.communityUrl));
+      }
+      if (location.pathname.replace(/\/$/u,'') !== PATH) throw new Error('Откройте выбранное сообщество.');
       if (composerCandidates().length) throw new Error('Уже открыт черновик. Завершите или закройте его перед запуском.');
       state.stage = 'song text'; const text = await preparePostText();
       log(state.songTitle ? `Текст подготовлен: ${state.songTitle}.` : 'Текст подготовлен.');
@@ -973,7 +1005,7 @@
       const root = currentComposerRoot();
       if (photoAttachments(root).length !== 1 || audioAttachments(root).length !== 1) throw new Error('Вложения не удалось проверить. Пост оставлен в редакторе.');
       if (!options.automatic) { log('Пост подготовлен. Проверьте автора и вложения, затем опубликуйте в VK вручную.'); return; }
-      if (!authorVerified(root)) throw new Error('Не удалось подтвердить автора «Три Слога». Пост оставлен в редакторе. Проверьте автора; отправьте диагностику для настройки.');
+      if (!authorVerified(root)) throw new Error(`Не удалось подтвердить автора «${NAME}». Пост оставлен в редакторе. Проверьте автора; отправьте диагностику для настройки.`);
       if (state.stopped) throw new Error('Остановлено пользователем.');
       const submit=options.scheduledAt ? await prepareScheduledSubmission(options.scheduledAt) : one(control(root, /^Опубликовать$/u), 'кнопка публикации');
       await message({type: 'beginPublish', jobId, photo: state.photo.id, audio: state.audio.id,scheduledAt:options.scheduledAt,batchId:state.batch?.id});
@@ -1020,14 +1052,16 @@
     return outcome;
   }
 
-  globalThis.TriSloga = {run, photoCandidates, audioCandidates, composerCandidates, parseSongs, chooseSongExcerpt,
+  globalThis.TriSloga = {configure,artistMatches,firstBandSearchAudio,run, photoCandidates, audioCandidates, composerCandidates, parseSongs, chooseSongExcerpt,
     songSimilarity, matchingCommunityAudio, state, openComposer,
     creationMenuItems, musicPicker, matchesAudio, attachAudio, attachPhoto, nativePhotoCards, currentComposerRoot, audioAttachments, photoAttachments, authorVerified,
     parsePostDate,pendingPostDate,latestPendingDate,prepareScheduledSubmission,runBatch,captchaGate,captchaVisible,dateParts,scheduledPosts};
   chrome.runtime.onMessage.addListener((options, sender, reply) => {
     if (sender.id !== chrome.runtime.id) return;
     if(options.type==='inspectPending') {
-      if(location.pathname!=='/wall-220995299' || new URLSearchParams(location.search).get('postponed')!=='1') {reply({ok:false,error:'Открыта другая страница отложенных записей.'});return;}
+      try { configure(options.batch.settings,options.batch.community); }
+      catch (error) {reply({ok:false,error:error.message});return;}
+      if(location.pathname!==`/wall${OWNER}` || new URLSearchParams(location.search).get('postponed')!=='1') {reply({ok:false,error:'Открыта другая страница отложенных записей.'});return;}
       state.batch=options.batch;state.stopped=false;state.batchStopped=false;state.captchaPaused=false;
       const heartbeat=setInterval(()=>message({type:'batchHeartbeat',batchId:options.batch.id}).catch(()=>{}),20000);
       (async()=>{

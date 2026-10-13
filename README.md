@@ -1,18 +1,20 @@
-# Три Слога — VK publisher
+# AZ_vk_poster
 
-Chrome extension for https://vk.ru/tri_sloga_band. Version 0.5.6 creates a finite batch of scheduled posts instead of publishing periodically.
+Chrome extension for VK communities. Version 0.6.0 creates a finite batch of scheduled posts and lets you choose the community, music artist, and Google Docs text source.
 
 ## Use
 
-1. Reload the extension in chrome://extensions and refresh the VK community tab.
-2. Choose **Amount** (number of posts) and **Interval** (seconds to wait between creating posts).
-3. Click **Запланировать партию**. Keep Chrome and the VK tab open until it finishes.
+1. Open `chrome://extensions`, enable **Developer mode**, click **Load unpacked**, and select `C:\Users\Anton\Documents\VK_poster\extension`. Load this folder, not the project root or the old ZIP. If already installed from this folder, click **Reload** and refresh the VK tab. For an installation from another folder, disable the old extension and load this folder.
+2. Sign in to VK in Chrome with an account allowed to create community posts. Pin **AZ_vk_poster** using Chrome's extensions menu.
+3. Open the popup, enter **Ссылка на сообщество VK**, **Исполнитель**, and **Ссылка на Google Документ с текстами**, and click **Сохранить настройки**. Both `https://vk.ru/name` and `https://vk.com/club123` community links work. Numeric `club<ID>` or `public<ID>` links can also be used when VK does not expose the ID for a short name. The default artist is **Три слога**; the previous community and document remain initial defaults.
+4. The Google Doc must be readable via its link without signing in. Use real heading styles for song titles and paragraphs for lyrics; separate verses with blank paragraphs. A private document requiring a Google login will stop the batch. Only Google Docs links are supported for now.
+5. Choose **Amount** (number of posts) and **Interval** (seconds to wait between creating posts), then click **Запланировать партию**. Starting also saves the current fields. Keep Chrome and the VK tab open until it finishes. Settings are saved between popup openings and fixed for a running or paused batch; stop it before changing them.
 
-The extension reads **Отложенные посты** at `https://vk.ru/wall-220995299?postponed=1` in a temporary tab using the existing VK login. It loads the list, reads dates from post headers and closes that tab, leaving the community editor open. The first new post is scheduled one day later, preserving the time of day. Each subsequent post is scheduled on the next day. If the queue is explicitly empty, the first post is scheduled tomorrow at the current Moscow time. Dates use Europe/Moscow, including month/year rollover.
+The extension reads **Отложенные посты** at `https://vk.ru/wall-<selected community ID>?postponed=1` (or the `vk.com` equivalent) in a temporary tab using the existing VK login. It loads the list, reads dates from post headers and closes that tab, leaving the community editor open. The first new post is scheduled one day later, preserving the time of day. Each subsequent post is scheduled on the next day. If the queue is explicitly empty, the first post is scheduled tomorrow at the current Moscow time. Dates use Europe/Moscow, including month/year rollover.
 
-It reads the shared [song document](https://docs.google.com/document/d/1P-uauTVZ_u8GkYct3f7UN__g6pTFS8y-/edit), chooses a random song and a random verse, and appends `Три слога - <song title>`. Photos are selected natively in **Выбрать из ВКонтакте → Фото VK**, scrolling the community grid to load more. No thumbnail download/upload or album tabs are used.
+It reads the selected Google Doc, chooses a random song and a random verse with the existing parser, and appends `<selected artist> - <song title>`. Song selection and verse selection are unchanged. Photos are selected natively in **Выбрать из ВКонтакте → Фото VK**, scrolling the community grid to load more. No thumbnail download/upload or album tabs are used.
 
-Music search uses the document title and selects the first similar title credited to **Три слога**, including collaborations. If none appears, it searches for a random community reserve song. If the reserve cannot be matched, it selects the first reserve search result. Duplicate versions use the first eligible row.
+Music search uses **the selected artist + the document song title** and selects the first similar title credited to that artist, including collaborations. If none appears, it searches for the selected artist with a random community reserve title and uses the first eligible result. A missing or empty community music tab does not prevent searching the selected artist. Results from a different artist are not attached. Duplicate versions use the first eligible row.
 
 The final action uses **Запланировать**, verifies the date/time inputs, and confirms the resulting post and date in **Отложенные**. The normal batch flow never clicks **Опубликовать**. Progress is saved after each confirmed scheduled post; the next post starts after Interval seconds. Browser throttling or sleep can lengthen this pause.
 
@@ -26,15 +28,16 @@ VK controls vary by account and interface version. The extension supports the ca
 
 ## Project
 
+- `extension/config.js`: defaults, settings validation, Google Docs export URLs, and community identification.
 - `extension/content.js`: media selection, queue/date inspection, scheduling and CAPTCHA pause.
 - `extension/batch.js`: batch settings, tab dispatch, saved progress and notifications.
 - `extension/background.js`: document fetching and submission guards.
-- `extension/popup.*`: Amount, Interval, progress and recovery controls.
+- `extension/popup.*`: community, artist, document, Amount, Interval, progress and recovery controls.
 - `extension/scheduler.js`: previous hourly scheduler retained for reference, not loaded by the batch version.
 - `app.py`: earlier desktop prototype, not the active extension.
 
 All automated tests use offline browser fixtures and never publish or schedule real VK posts. Run `python -m unittest discover -v`.
 
-Changes stay on review branches until the user approves merging. Browser profiles, credentials, diagnostics and generated ZIPs are excluded from Git.
+Changes stay on local branches until the user approves pushing and merging. Browser profiles, credentials, diagnostics and generated ZIPs are excluded from Git.
 
 Verification normalizes whitespace, retains matches seen while scrolling, and records the underlying error plus text/date match details in diagnostics.

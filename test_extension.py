@@ -24,6 +24,7 @@ class ExtensionTests(unittest.TestCase):
         self.page = self.browser.new_page()
         self.page.route('**/*', lambda route: route.fulfill(body='<html><body></body></html>', content_type='text/html'))
         self.page.goto('https://vk.ru/tri_sloga_band')
+        self.page.add_script_tag(path=str(EXT/'config.js'))
         self.page.evaluate('''() => {
           window.testStorage = {};
           window.testListeners = [];
@@ -42,7 +43,9 @@ class ExtensionTests(unittest.TestCase):
 
     def content(self, html):
         self.page.set_content(html)
+        self.page.add_script_tag(path=str(EXT/'config.js'))
         self.page.add_script_tag(path=str(EXT/'content.js'))
+        self.page.evaluate("TriSloga.configure(AZVK.defaults,{owner:'-220995299',path:'/tri_sloga_band',name:'Три Слога',origin:'https://vk.ru'})")
 
     def test_only_community_photo_tab_media_is_selected(self):
         self.content('''
@@ -175,7 +178,7 @@ class ExtensionTests(unittest.TestCase):
             # Separate negative scenarios for real titles, not catalogue claims.
             ('Бродский', [('Другой исполнитель', 'Бродский')]),
             ('Улыбайтесь здесь', []),
-            ('Заснежье', [('НеТри слога', 'Заснежье'), ('Три слогаXYZ', 'Заснежье')]),
+            ('Дорога', [('НеТри слога', 'Дорога'), ('Три слогаXYZ', 'Дорога')]),
         ]
         for title, results in cases:
             with self.subTest(title=title):
@@ -193,9 +196,9 @@ class ExtensionTests(unittest.TestCase):
                     (window.actualQueries ||= []).push(e.target.value);
                     const render=()=>{
                     rows.replaceChildren();
-                    const matches=e.target.value===title ? results : [['Три слога','Заснежье']];
+                    const matches=e.target.value==='Три слога '+title ? results : [['Три слога','Заснежье']];
                     matches.forEach(([artist,name],index)=>{
-                      const row=document.createElement('div');row.dataset.audioId=e.target.value===title ? `-220995299_${index+1}` : '-220995299_999';
+                      const row=document.createElement('div');row.dataset.audioId=e.target.value==='Три слога '+title ? `-220995299_${index+1}` : '-220995299_999';
                       row.innerHTML='<span data-testid=music-cell-title></span><span data-testid=music-cell-artists></span><input type=checkbox>';
                       row.querySelector('[data-testid=music-cell-title]').textContent=name;
                       row.querySelector('[data-testid=music-cell-artists]').textContent=artist;
@@ -213,7 +216,7 @@ class ExtensionTests(unittest.TestCase):
                   };
                 }''', {'title':title,'results':results})
                 self.page.evaluate('TriSloga.attachAudio()')
-                self.assertEqual(self.page.evaluate('window.actualQueries[0]'),title)
+                self.assertEqual(self.page.evaluate('window.actualQueries[0]'),'Три слога '+title)
                 expected=next((item for item in results if item[0].lower() in ['три слога','цугцванг, три слога, nemnogodushno']), ('Три слога','Заснежье'))
                 self.assertEqual(self.page.evaluate('TriSloga.state.audio.title'),expected[1])
                 self.assertEqual(self.page.evaluate('TriSloga.state.audio.artist'),expected[0])
@@ -237,7 +240,7 @@ class ExtensionTests(unittest.TestCase):
           TriSloga.state.audio={id:'-220995299_456239149',title:'Бродский версия 2026',artist:'Три слога',duration:'3:09'};
           TriSloga.state.composer={root:document.getElementById('editor'),editor:document.querySelector('[contenteditable]'),modern:true};
           document.querySelector('[data-testid=posting_audio_search_audio_input]').oninput=e=>{
-            queries.push(e.target.value);rows.hidden=e.target.value==='Дорога';
+            queries.push(e.target.value);rows.hidden=e.target.value==='Три слога Дорога';
           };
           document.getElementById('done').onclick=()=>{
             if(!rows.querySelector('input').checked) throw Error('First result not selected');
@@ -245,7 +248,7 @@ class ExtensionTests(unittest.TestCase):
           };
         }''')
         self.page.evaluate('TriSloga.attachAudio()')
-        self.assertEqual(self.page.evaluate('window.queries'),['Дорога','Три слога Бродский версия 2026'])
+        self.assertEqual(self.page.evaluate('window.queries'),['Три слога Дорога','Три слога Бродский версия 2026'])
         self.assertEqual(self.page.evaluate('TriSloga.state.audio.title'),'Бродский')
         self.assertEqual(self.page.evaluate('TriSloga.state.sourceAudio.id'),'-220995299_456239149')
         self.assertTrue(self.page.locator('#rows input').first.is_checked())
@@ -577,8 +580,8 @@ class ExtensionTests(unittest.TestCase):
         self.page.locator('#enable').click()
         self.page.wait_for_function("document.getElementById('status').textContent.includes('из 5')")
         calls=self.page.evaluate('calls')
-        self.assertEqual(calls[-1], {'type':'batchStart','amount':5,'intervalSeconds':3})
-        self.assertEqual(self.page.locator('input').count(),2)
+        self.assertEqual(calls[-1], {'type':'batchStart','amount':5,'intervalSeconds':3,'settings':self.page.evaluate('AZVK.defaults')})
+        self.assertEqual(self.page.locator('input').count(),5)
         self.page.locator('#disable').click()
         self.page.wait_for_function("calls.some(c=>c.type==='batchStop')")
 
@@ -635,10 +638,10 @@ class ExtensionTests(unittest.TestCase):
         self.assertFalse(result['ok'])
         self.assertIn('Неизвестная команда',result['error'])
 
-    def workflow_fixture(self):
-        self.content('''
+    def workflow_fixture(self, custom=False):
+        html = '''
           <a id="top_profile_link" href="/me">Profile</a>
-          <h1 data-testid="group-name">Три Слога</h1><button data-testid="group_manage_menu_manage">Управление</button>
+          <h1 data-testid="group-name">Три Слога</h1><a href="/wall-220995299">Стена сообщества</a><button data-testid="group_manage_menu_manage">Управление</button>
           <button data-testid="group_tab_photos">Фото</button>
           <button data-testid="group_tab_audios">Музыка</button>
           <button data-testid="group_tab_wall">Посты</button>
@@ -669,7 +672,14 @@ class ExtensionTests(unittest.TestCase):
               '<div data-testid=posting_audio_select_audio_selected><span data-testid=posting_audio_select_audio_selected_title>Song</span><span>Три Слога</span><button data-testid=posting_audio_unselect_audio>Удалить</button></div>');document.getElementById('picker').hidden=true">Добавить</button></div>
           </div>
           <article id="post" data-testid="post"></article>
-        ''')
+        '''
+        if custom:
+            html=html.replace('220995299','123456').replace('Три Слога','Другой артист').replace('Три слога','Другой артист')
+            html=html.replace('data-testid="group-name">Другой артист','data-testid="group-name">Другое сообщество')
+            self.page.evaluate("history.replaceState(null,'','/another_group')")
+        self.content(html)
+        if custom:
+            self.page.evaluate("testStorage.settings={...AZVK.defaults,communityUrl:'https://vk.ru/another_group',artist:'Другой артист',documentUrl:'https://docs.google.com/document/d/custom_doc/edit'}")
         self.page.evaluate('''() => {window.sentMessages=[];chrome.runtime.sendMessage=async msg=>{
           sentMessages.push(msg);
           if(msg.type==='claim') return {ok:true,jobId:'fixture'};

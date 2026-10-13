@@ -1,6 +1,4 @@
-const COMMUNITY_PATH = '/tri_sloga_band';
-const LYRICS_SOURCE = 'https://docs.google.com/document/d/1P-uauTVZ_u8GkYct3f7UN__g6pTFS8y-/export?format=html';
-if (typeof importScripts === 'function') importScripts('batch.js');
+if (typeof importScripts === 'function') importScripts('config.js', 'batch.js');
 let jobQueue = Promise.resolve();
 // Name only our diagnostic downloads; leave all other downloads untouched.
 chrome.downloads?.onDeterminingFilename?.addListener((item,suggest)=>{
@@ -86,6 +84,16 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
   const fromVK = sender.tab && /^https:\/\/(vk\.ru|vk\.com)\//.test(sender.url || sender.tab.url || '');
   if (!fromExtension) return;
   const task = async () => {
+    if (['settingsGet','settingsSave'].includes(message.type)) {
+      if (sender.tab) throw new Error('Используйте настройки расширения.');
+      if (message.type === 'settingsGet') return {settings:await AZVK.loadSettings()};
+      return batchSerial(async () => {
+        const {batch} = await chrome.storage.local.get('batch');
+        if (batch?.enabled) throw new Error('Остановите партию перед изменением настроек.');
+        const settings = AZVK.normalizeSettings(message.settings);
+        await chrome.storage.local.set({settings}); return {settings};
+      });
+    }
     if(message.type==='pendingInspect') {
       if(!fromVK)throw new Error('Запрос должен поступить из VK.');
       return batchCommand(message,sender);
@@ -109,7 +117,11 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
     }
     if (message.type === 'lyrics') {
       if (!fromVK) throw new Error('Запрос должен поступить из вкладки VK.');
-      const result = await fetchLimited(LYRICS_SOURCE, 2_000_000);
+      const {batch} = await chrome.storage.local.get('batch');
+      if (message.batchId && (!batch?.enabled || batch.id !== message.batchId || batch.tabId !== sender.tab.id))
+        throw new Error('Устаревший сеанс партии.');
+      const settings = message.batchId ? batch.settings || await AZVK.loadSettings() : await AZVK.loadSettings();
+      const result = await fetchLimited(AZVK.documentExport(settings), 2_000_000);
       return {html: new TextDecoder().decode(result.data)};
     }
     if (message.type === 'diagnostic') {

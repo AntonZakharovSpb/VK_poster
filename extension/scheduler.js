@@ -1,6 +1,5 @@
 const SCHEDULE_ALARM = 'tri-sloga-publish';
 const WATCHDOG_ALARM = 'tri-sloga-watchdog';
-const COMMUNITY_URL = 'https://vk.ru/tri_sloga_band';
 const RUN_TIMEOUT = 15 * 60 * 1000;
 let scheduleQueue = Promise.resolve();
 let startupHandled = false;
@@ -20,7 +19,7 @@ async function notifyFailure(error, loading = false) {
   await chrome.action.setBadgeText({text: '!'});
   try {
     await chrome.notifications.create('tri-sloga-error', {
-      type: 'basic', iconUrl: 'icon.png', title: 'Три Слога — требуется внимание', message,
+      type: 'basic', iconUrl: 'icon.png', title: 'AZ_vk_poster — требуется внимание', message,
       priority: 2, buttons: [{title: 'Исправлено — повторить'}]
     });
   } catch { /* Popup status and toolbar badge remain available if OS notifications are disabled. */ }
@@ -39,8 +38,10 @@ async function restoreSchedule() {
 }
 
 async function findCommunityTab({refresh = false} = {}) {
+  const settings = await AZVK.loadSettings();
+  const COMMUNITY_URL = settings.communityUrl;
   const tabs = await chrome.tabs.query({url: ['https://vk.ru/*', 'https://vk.com/*']});
-  const matches = tab => /^https:\/\/(vk\.ru|vk\.com)\/tri_sloga_band\/?(?:[?#]|$)/.test(tab.url || '');
+  const matches = tab => AZVK.matchesCommunity(tab.url || '',settings);
   const tab = tabs.find(t => t.active && matches(t)) || tabs.find(matches);
   if (tab) return chrome.tabs.update(tab.id, {active: true, ...(refresh ? {url: COMMUNITY_URL} : {})});
   if (!(await chrome.windows.getAll({windowTypes: ['normal']})).length) {
@@ -53,15 +54,16 @@ async function findCommunityTab({refresh = false} = {}) {
 }
 
 async function waitForCommunity(tabId, timeout = 45000) {
+  const settings = await AZVK.loadSettings();
   const deadline = Date.now() + timeout;
   while (Date.now() < deadline) {
     const tab = await chrome.tabs.get(tabId);
     if (tab.status === 'complete') {
       try {
-        const [probe] = await chrome.scripting.executeScript({target: {tabId}, func: () =>
-          /^https:\/\/(vk\.ru|vk\.com)\/tri_sloga_band\/?(?:[?#]|$)/.test(location.href) &&
+        const [probe] = await chrome.scripting.executeScript({target: {tabId}, func: path =>
+          location.pathname.replace(/\/$/u,'') === path &&
           !!document.body && document.body.innerText.trim().length > 30 &&
-          !!document.querySelector('#top_profile_link,#l_pr,[data-testid="header-profile-menu-button"],#group_manage_menu_manage,.group_name,#login_form,input[type="password"],a[href*="login"]')
+          !!document.querySelector('#top_profile_link,#l_pr,[data-testid="header-profile-menu-button"],#group_manage_menu_manage,.group_name,#login_form,input[type="password"],a[href*="login"]'),args:[new URL(settings.communityUrl).pathname]
         });
         if (probe?.result) return;
       } catch { /* Includes Chrome's network error page; wait for a possible recovery. */ }
@@ -132,7 +134,7 @@ async function launchScheduledRun(generation, {retry = false, confirmNoPost = fa
     if (!allowed) return;
     await waitForCommunity(tab.id);
     loading = false;
-    await chrome.scripting.executeScript({target: {tabId: tab.id}, files: ['content.js']});
+    await chrome.scripting.executeScript({target: {tabId: tab.id}, files: ['config.js','content.js']});
     // Serialize dispatch with Stop so a pending load cannot start a job after disabling.
     await serializedSchedule(async () => {
       const {schedule, scheduleRun} = await chrome.storage.local.get(['schedule', 'scheduleRun']);

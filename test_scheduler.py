@@ -21,6 +21,7 @@ class SchedulerTests(unittest.TestCase):
         self.page = self.browser.new_page()
         self.page.route('**/*', lambda route: route.fulfill(body='<html><body>Offline fixture</body></html>'))
         self.page.goto('https://vk.ru/tri_sloga_band')
+        self.page.add_script_tag(path=str(EXT/'config.js'))
         self.page.evaluate('''() => {
           window.store={}; window.calls=[]; window.alarms={}; window.listeners={};
           window.chrome={
@@ -35,7 +36,7 @@ class SchedulerTests(unittest.TestCase):
               update:async(id,opts)=>{calls.push({type:'tab',id,...opts});return {id}},
               create:async opts=>{calls.push({type:'create',...opts});return {id:8}},
               get:async()=>({status:'complete'}),sendMessage:async(id,msg)=>{calls.push({id,...msg});return {ok:true}}},
-            scripting:{executeScript:async opts=>{calls.push({type:'script',...opts,func:undefined});return [{result:true}]}},
+            scripting:{executeScript:async opts=>{calls.push({type:'script',...opts,func:undefined});return [{result:opts.func?.name==='resolveCommunity' ? {owner:'-220995299',path:'/tri_sloga_band',name:'Три Слога',origin:'https://vk.ru'} : true}]}},
             action:{setBadgeText:async data=>calls.push({type:'badge',...data}),setBadgeBackgroundColor:async()=>{}},
             notifications:{create:async(id,data)=>calls.push({...data,type:'notification',id}),clear:async()=>{},onClicked:{addListener:fn=>listeners.click=fn},
               onButtonClicked:{addListener:fn=>listeners.button=fn}}
@@ -188,7 +189,7 @@ class SchedulerTests(unittest.TestCase):
         self.page.evaluate('()=>{waitForCommunity=async()=>{}}')
         self.page.evaluate('scheduleCommand({type:"scheduleRetry"},{})')
         self.assertEqual(self.page.evaluate('calls.filter(c=>c.type==="start").length'), 1)
-        self.assertTrue(self.page.evaluate('calls.some(c=>c.type==="tab" && c.url===COMMUNITY_URL)'))
+        self.assertTrue(self.page.evaluate('calls.some(c=>c.type==="tab" && c.url===AZVK.defaults.communityUrl)'))
         self.assertAlmostEqual(self.page.evaluate('(store.schedule.nextRunAt-Date.now())/3600000'),2,places=3)
         self.assertTrue(self.page.evaluate('store.scheduleStatus.running'))
 
@@ -251,7 +252,7 @@ class SchedulerTests(unittest.TestCase):
           chrome.windows.getAll=async()=>[];
         }''')
         self.page.evaluate('scheduleCommand({type:"scheduleRetry"},{})')
-        self.assertEqual(self.page.evaluate('calls.filter(c=>c.type==="normal" && c.url===COMMUNITY_URL).length'),1)
+        self.assertEqual(self.page.evaluate('calls.filter(c=>c.type==="normal" && c.url===AZVK.defaults.communityUrl).length'),1)
         self.assertFalse(self.page.evaluate('!!store.browserClosed'))
         self.assertEqual(self.page.evaluate('calls.filter(c=>c.type==="start").length'),1)
 

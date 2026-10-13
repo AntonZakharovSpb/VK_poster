@@ -124,17 +124,17 @@ class BatchPageTests(unittest.TestCase):
     def test_inspection_message_reads_queue_and_checks_requested_post(self):
         self.content('''<div id=post-220995299_1><div class=post_header>Три Слога<span>8 окт 2026 в 22:39</span></div><p>test.</p></div>''')
         self.page.evaluate("history.replaceState(null,'','/wall-220995299?postponed=1')")
-        response=self.page.evaluate('''()=>new Promise(resolve=>testListeners[0]({type:'inspectPending',batch:{id:'fixture'},text:'test.',date:1791488340000},{id:'test-extension'},resolve))''')
+        response=self.page.evaluate('''()=>new Promise(resolve=>testListeners[0]({type:'inspectPending',batch:{id:'fixture',settings:AZVK.defaults,community:{owner:'-220995299',path:'/tri_sloga_band',name:'Три Слога',origin:'https://vk.ru'}},text:'test.',date:1791488340000},{id:'test-extension'},resolve))''')
         self.assertTrue(response['ok'])
         self.assertTrue(response['found'])
 
     def test_inspection_normalizes_whitespace_and_records_mismatch_details(self):
         self.content('''<div id=post-220995299_1><span class=post_date>15 окт 2026 в 10:39</span><p>Текст   первой\n строки</p></div>''')
         self.page.evaluate("history.replaceState(null,'','/wall-220995299?postponed=1')")
-        response=self.page.evaluate('''()=>new Promise(resolve=>testListeners[0]({type:'inspectPending',batch:{id:'fixture'},text:'Текст первой строки',date:1792049940000},{id:'test-extension'},resolve))''')
+        response=self.page.evaluate('''()=>new Promise(resolve=>testListeners[0]({type:'inspectPending',batch:{id:'fixture',settings:AZVK.defaults,community:{owner:'-220995299',path:'/tri_sloga_band',name:'Три Слога',origin:'https://vk.ru'}},text:'Текст первой строки',date:1792049940000},{id:'test-extension'},resolve))''')
         self.assertTrue(response['found'])
         self.assertTrue(response['verification']['observed'][0]['textMatches'])
-        response=self.page.evaluate('''()=>new Promise(resolve=>testListeners[0]({type:'inspectPending',batch:{id:'fixture'},text:'Текст первой строки',date:1792136340000},{id:'test-extension'},resolve))''')
+        response=self.page.evaluate('''()=>new Promise(resolve=>testListeners[0]({type:'inspectPending',batch:{id:'fixture',settings:AZVK.defaults,community:{owner:'-220995299',path:'/tri_sloga_band',name:'Три Слога',origin:'https://vk.ru'}},text:'Текст первой строки',date:1792136340000},{id:'test-extension'},resolve))''')
         self.assertFalse(response['found'])
         self.assertEqual(response['verification']['observed'][0]['date'],1792049940000)
 

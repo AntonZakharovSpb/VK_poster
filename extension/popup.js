@@ -3,13 +3,23 @@ const interval=document.getElementById('interval'),amount=document.getElementByI
 const enable=document.getElementById('enable'),disable=document.getElementById('disable');
 const fixed=document.getElementById('fixed'),captcha=document.getElementById('captcha');
 const approve=document.getElementById('approve');
+const communityUrl=document.getElementById('communityUrl'),artist=document.getElementById('artist'),documentUrl=document.getElementById('documentUrl');
+const saveSettings=document.getElementById('saveSettings');
+let settingsLoaded=false;
+enable.disabled=true;saveSettings.disabled=true;
+const settingsFields=[communityUrl,artist,documentUrl];
+function inputSettings(){return AZVK.normalizeSettings({communityUrl:communityUrl.value,artist:artist.value,documentUrl:documentUrl.value});}
+function showSettings(settings){for(const field of settingsFields)field.value=settings[field.id];}
 let approval=null;
 let uncertain=false;
 async function command(data) {
   const reply=await chrome.runtime.sendMessage(data);
   if(!reply?.ok) throw new Error(reply?.error||'Расширение не ответило.');return reply;
 }
-function render({batch,publicationAttempt}) {
+function render({batch,publicationAttempt,settings}) {
+  if(!settingsLoaded || batch?.enabled){showSettings(batch?.enabled && batch.settings ? batch.settings : {...AZVK.defaults,...settings});settingsLoaded=true;}
+  for(const field of settingsFields)field.disabled=!!batch?.enabled;
+  saveSettings.disabled=!!batch?.enabled;
   uncertain=publicationAttempt?.status==='pending';
   approval=batch?.awaitingApproval ? {batchId:batch.id,attemptId:publicationAttempt?.jobId} : null;
   approve.hidden=!approval;
@@ -35,8 +45,14 @@ function render({batch,publicationAttempt}) {
 async function refresh(){try{render(await command({type:'batchStatus'}));}catch(error){status.textContent=error.message;}}
 enable.onclick=async()=>{
   enable.disabled=true;
-  try{render(await command({type:'batchStart',amount:Number(amount.value),intervalSeconds:Number(interval.value)}));}
+  try{render(await command({type:'batchStart',settings:inputSettings(),amount:Number(amount.value),intervalSeconds:Number(interval.value)}));}
   catch(error){status.textContent=error.message;enable.disabled=false;}
+};
+saveSettings.onclick=async()=>{
+  saveSettings.disabled=true;
+  try{const reply=await command({type:'settingsSave',settings:inputSettings()});showSettings(reply.settings);status.textContent='Настройки сохранены.';}
+  catch(error){status.textContent=error.message;}
+  finally{saveSettings.disabled=!settingsLoaded || settingsFields.some(field=>field.disabled);}
 };
 disable.onclick=async()=>{try{render(await command({type:'batchStop'}));}catch(error){status.textContent=error.message;}};
 approve.onclick=async()=>{

@@ -7,16 +7,18 @@ async function batchNotify(error) {
   await chrome.action.setBadgeText({text:'!'});
   await chrome.action.setBadgeBackgroundColor({color:'#d93025'});
   try { await chrome.notifications.create('tri-sloga-error', {type:'basic',iconUrl:'icon.png',
-    title:'Три Слога — партия приостановлена',message:error,priority:2}); } catch {}
+    title:'AZ_vk_poster — партия приостановлена',message:error,priority:2}); } catch {}
 }
-async function batchTab() {
+async function batchTab(settings,community) {
   const tabs = await chrome.tabs.query({url:['https://vk.ru/*','https://vk.com/*']});
-  const matches = tab => /^https:\/\/(vk\.ru|vk\.com)\/tri_sloga_band\/?(?:[?#]|$)/.test(tab.url || '');
+  const matches = tab => AZVK.matchesCommunity(tab.url || '',settings,community);
   const tab = tabs.find(t=>t.active && matches(t)) || tabs.find(matches);
-  return tab ? chrome.tabs.update(tab.id,{active:true}) : chrome.tabs.create({url:'https://vk.ru/tri_sloga_band',active:true});
+  return tab ? chrome.tabs.update(tab.id,{active:true}) : chrome.tabs.create({url:settings.communityUrl,active:true});
 }
 async function readPendingPage(batch,check={}) {
-  const tab=await chrome.tabs.create({url:'https://vk.ru/wall-220995299?postponed=1',active:false});
+  if (!batch.community?.owner) throw new Error('Не определено сообщество для проверки очереди.');
+  const wallPath = `/wall${batch.community.owner}`;
+  const tab=await chrome.tabs.create({url:`${batch.community.origin}${wallPath}?postponed=1`,active:false});
   try {
     await batchSerial(async()=>{
       const {batch:current}=await chrome.storage.local.get('batch');
@@ -28,15 +30,15 @@ async function readPendingPage(batch,check={}) {
     while(Date.now()<deadline) {
       if((await chrome.tabs.get(tab.id)).status==='complete') {
         try {
-          const [probe]=await chrome.scripting.executeScript({target:{tabId:tab.id},func:()=>
-            location.pathname==='/wall-220995299' && new URLSearchParams(location.search).get('postponed')==='1' && !!document.body});
+          const [probe]=await chrome.scripting.executeScript({target:{tabId:tab.id},func:wallPath=>
+            location.pathname===wallPath && new URLSearchParams(location.search).get('postponed')==='1' && !!document.body,args:[wallPath]});
           if(probe?.result) {ready=true;break;}
         }catch{}
       }
       await new Promise(resolve=>setTimeout(resolve,500));
     }
     if(!ready)throw new Error('Страница «Отложенные посты» не загрузилась. Проверьте VK и VPN.');
-    await chrome.scripting.executeScript({target:{tabId:tab.id},files:['content.js']});
+    await chrome.scripting.executeScript({target:{tabId:tab.id},files:['config.js','content.js']});
     const response=await chrome.tabs.sendMessage(tab.id,{type:'inspectPending',batch,...check});
     if(!response?.ok)throw new Error(response?.error||'Не удалось прочитать «Отложенные посты».');
     return response;
@@ -50,7 +52,10 @@ async function readPendingPage(batch,check={}) {
 }
 async function batchLaunch(id) {
   try {
-    const tab = await batchTab();
+    const {batch:startingBatch} = await chrome.storage.local.get('batch');
+    if (!startingBatch?.enabled || startingBatch.id !== id) return;
+    const settings = startingBatch.settings || await AZVK.loadSettings();
+    const tab = await batchTab(settings,startingBatch.community);
     const allowed = await batchSerial(async()=>{
       const {batch} = await chrome.storage.local.get('batch');
       if (!batch?.enabled || batch.id !== id) return false;
@@ -62,18 +67,21 @@ async function batchLaunch(id) {
     while(Date.now()<deadline) {
       if ((await chrome.tabs.get(tab.id)).status==='complete') {
         try {
-          const [probe]=await chrome.scripting.executeScript({target:{tabId:tab.id},func:()=>
-            location.pathname==='/tri_sloga_band' && !!document.querySelector('#top_profile_link,[data-testid="header-profile-menu-button"],#login_form,input[type="password"]')});
+          const [probe]=await chrome.scripting.executeScript({target:{tabId:tab.id},func:requestedPath=>
+            (location.pathname.replace(/\/$/u,'')===requestedPath || /^\/(club|public|event)\d+$/u.test(requestedPath)) && !!document.querySelector('#top_profile_link,[data-testid="header-profile-menu-button"],#login_form,input[type="password"]') &&
+            !!document.querySelector('[data-testid="group-name"],.group_name,#group_name,.page_name,#login_form,input[type="password"]'),args:[new URL(settings.communityUrl).pathname]});
           if(probe?.result) {loaded=true;break;}
         } catch {}
       }
       await new Promise(resolve=>setTimeout(resolve,500));
     }
     if (!loaded) throw new Error('VK не загрузился за 45 секунд. Проверьте соединение и VPN.');
-    const [injected]=await chrome.scripting.executeScript({target:{tabId:tab.id},files:['content.js']});
+    const [resolved]=await chrome.scripting.executeScript({target:{tabId:tab.id},func:AZVK.resolveCommunity,args:[settings.communityUrl]});
+    if (!resolved?.result?.owner) throw new Error('Не удалось определить сообщество.');
+    const [injected]=await chrome.scripting.executeScript({target:{tabId:tab.id},files:['config.js','content.js']});
     await batchSerial(async()=>{
       const {batch}=await chrome.storage.local.get('batch');
-      if(batch?.enabled && batch.id===id)await chrome.storage.local.set({batch:{...batch,documentId:injected?.documentId||null}});
+      if(batch?.enabled && batch.id===id)await chrome.storage.local.set({batch:{...batch,settings,community:resolved.result,documentId:injected?.documentId||null}});
     });
     const {batch:currentBatch}=await chrome.storage.local.get('batch');
     const queue=await readPendingPage(currentBatch);
@@ -111,7 +119,7 @@ async function finishUnconfirmedBatch(force=false) {
 }
 async function batchCommand(message,sender) {
   if(message.type==='batchStatus') return batchSerial(async()=>{
-    await finishUnconfirmedBatch();return chrome.storage.local.get(['batch','publicationAttempt']);
+    await finishUnconfirmedBatch();return chrome.storage.local.get(['batch','publicationAttempt','settings']);
   });
   if(message.type==='pendingInspect') {
     const {batch}=await chrome.storage.local.get('batch');
@@ -134,6 +142,7 @@ async function batchCommand(message,sender) {
     batchLaunch(id);return chrome.storage.local.get('batch');
   }
   if(message.type==='batchStart') {
+    const settings=AZVK.normalizeSettings(message.settings || await AZVK.loadSettings());
     const amount=Number(message.amount), intervalSeconds=Number(message.intervalSeconds);
     if(!Number.isInteger(amount)||amount<1||amount>1000) throw new Error('Количество: целое число от 1 до 1000.');
     if(!Number.isFinite(intervalSeconds)||intervalSeconds<1||intervalSeconds>86400) throw new Error('Интервал: от 1 до 86400 секунд.');
@@ -144,7 +153,7 @@ async function batchCommand(message,sender) {
       if(activeJob?.expires>Date.now()) throw new Error('Предыдущая попытка ещё завершается.');
       if(publicationAttempt?.status==='pending') throw new Error('Предыдущая отправка не подтверждена. Проверьте «Отложенные» и повторите через кнопку исправления.');
       const id=crypto.randomUUID();
-      await chrome.storage.local.set({batch:{id,enabled:true,running:true,amount,intervalSeconds,completed:0,lastDate:null,error:''},
+      await chrome.storage.local.set({settings,batch:{id,enabled:true,running:true,settings,amount,intervalSeconds,completed:0,lastDate:null,error:''},
         schedule:{enabled:false}});
       await chrome.alarms.clear('tri-sloga-publish');await chrome.alarms.clear('tri-sloga-watchdog');
       await chrome.action.setBadgeText({text:''}); return id;
