@@ -124,7 +124,7 @@ async function batchCommand(message,sender) {
   if(message.type==='pendingInspect') {
     const {batch}=await chrome.storage.local.get('batch');
     if(!batch?.enabled||batch.id!==message.batchId||batch.tabId!==sender.tab?.id)throw new Error('Устаревший сеанс партии.');
-    return readPendingPage(batch,{text:message.text,date:message.date});
+    return readPendingPage(batch,{text:message.text,date:message.date,verifyDateOnly:message.verifyDateOnly===true});
   }
   if(message.type==='batchApprove') {
     const id=await batchSerial(async()=>{

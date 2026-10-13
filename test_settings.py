@@ -5,7 +5,7 @@ import test_extension
 import test_batch
 
 EXT=Path(__file__).parent/'extension'
-CUSTOM={'communityUrl':'https://vk.ru/another_group','artist':'Другой артист','documentUrl':'https://docs.google.com/document/d/custom_doc/edit'}
+CUSTOM={'communityUrl':'https://vk.ru/another_group','artist':'Другой артист','documentUrl':'https://docs.google.com/document/d/custom_doc/edit','noAudio':False,'noText':False}
 COMMUNITY={'owner':'-123456','path':'/another_group','name':'Другое сообщество','origin':'https://vk.ru'}
 
 class SettingsPageTests(unittest.TestCase):
@@ -23,6 +23,7 @@ class SettingsPageTests(unittest.TestCase):
         self.page.add_script_tag(path=str(EXT/'popup.js'))
         self.page.wait_for_function('settingsLoaded')
         self.assertEqual(self.page.locator('#communityUrl').input_value(),'')
+        self.assertEqual(self.page.locator('#documentUrl').input_value(),'')
         self.assertEqual(self.page.locator('#artist').input_value(),'Три слога')
         self.page.locator('#enable').click()
         self.assertFalse(self.page.evaluate('calls.some(msg=>msg.type==="batchStart")'))
@@ -127,7 +128,8 @@ class SettingsPageTests(unittest.TestCase):
             if(msg.type==='settingsSave'){testStorage.settings=msg.settings;return {ok:true,settings:msg.settings};}
             return {ok:true,settings:testStorage.settings,batch:msg.type==='batchStart'?{enabled:true,settings:msg.settings}:undefined};};}''')
         self.page.add_script_tag(path=str(EXT/'popup.js'))
-        for key,value in CUSTOM.items(): self.page.locator('#'+key).fill(value)
+        for key,value in CUSTOM.items():
+            if isinstance(value,str): self.page.locator('#'+key).fill(value)
         self.page.locator('#saveSettings').click()
         self.assertEqual(self.page.evaluate('testStorage.settings'),CUSTOM)
         self.page.evaluate('settingsLoaded=false;refresh()')

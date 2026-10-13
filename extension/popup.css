@@ -24,3 +24,8 @@ button:disabled{opacity:.55;cursor:default}
 #approve,#fixed,#captcha{margin-top:10px}
 input:focus-visible,button:focus-visible,summary:focus-visible{outline:2px solid #0077ff;outline-offset:2px}
 [hidden]{display:none!important}
+.setting-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+.setting-heading>label:first-child{flex:1}
+.check{display:flex;align-items:center;gap:5px;white-space:nowrap;font-weight:400}
+.check input{width:auto;margin:0;padding:0;accent-color:#0077ff}
+.artist-default{margin:3px 0 0;font-size:10px}

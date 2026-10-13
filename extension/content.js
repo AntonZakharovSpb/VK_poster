@@ -492,7 +492,7 @@
     const unique = new Map();
     for (const row of outer) {
       const audio = audioMetadata(row);
-      if (!audio.title || !audio.artist) continue;
+      if (!audio.title || !audio.artist || isExcludedAudio(audio)) continue;
       const key = audio.id || normalize(`${audio.title} ${audio.artist} ${audio.duration || ''}`).toLocaleLowerCase('ru');
       if (!unique.has(key)) unique.set(key,row);
     }
@@ -501,10 +501,13 @@
   function firstSearchAudio(picker) {
     return searchAudioRows(picker)[0];
   }
-  function artistMatches(credit) {
-    const artist = settings.artist.replace(/[.*+?^${}()|[\]\\]/gu,'\\$&');
+  function artistMatches(credit,artistName=settings.artist) {
+    const artist = artistName.replace(/[.*+?^${}()|[\]\\]/gu,'\\$&');
     const boundary = '(?:[,;&/]|\\bfeat\\.?|\\bft\\.?)';
     return new RegExp(`(?:^|${boundary})\\s*${artist}\\s*(?=$|${boundary})`,'iu').test(normalize(credit));
+  }
+  function isExcludedAudio(audio) {
+    return /^не кота бот(?:\s|$)/u.test(normalizedSongTitle(audio.title)) && artistMatches(audio.artist,'Три слога');
   }
   function firstBandSearchAudio(picker) {
     return searchAudioRows(picker)
@@ -977,6 +980,7 @@
     state.scheduleRunId = options.scheduleRunId || null;
     state.photoAttached = false; state.audioSelectionVerified = null; state.communityContext = false;
     state.photo = null;
+    state.audio = null;
     state.sourceAudio = null;
     state.songTitle = null;
     state.photoSelectionVerified = null; state.sourcePhoto = null;
@@ -997,20 +1001,26 @@
       }
       if (location.pathname.replace(/\/$/u,'') !== PATH) throw new Error('Откройте выбранное сообщество.');
       if (composerCandidates().length) throw new Error('Уже открыт черновик. Завершите или закройте его перед запуском.');
-      state.stage = 'song text'; const text = await preparePostText();
-      log(state.songTitle ? `Текст подготовлен: ${state.songTitle}.` : 'Текст подготовлен.');
-      await collectMedia();
+      let text = '';
+      if (!settings.noText) {
+        state.stage = 'song text'; text = await preparePostText();
+        log(state.songTitle ? `Текст подготовлен: ${state.songTitle}.` : 'Текст подготовлен.');
+      } else log('Без текста: чтение документа пропущено.');
+      if (!settings.noAudio) await collectMedia();
+      else log('Без аудио: выбор музыки пропущен.');
       state.stage = 'open composer';
-      const composer = await openComposer({unattended: !!options.scheduleRunId || !!options.scheduledAt}); await captchaGate();setText(composer.editor, text);
-      await attachPhoto(); await advanceComposer(); await attachAudio();
+      const composer = await openComposer({unattended: !!options.scheduleRunId || !!options.scheduledAt}); await captchaGate();
+      if (!settings.noText) setText(composer.editor, text);
+      await attachPhoto(); await advanceComposer();
+      if (!settings.noAudio) await attachAudio();
       state.stage = 'verify';
       const root = currentComposerRoot();
-      if (photoAttachments(root).length !== 1 || audioAttachments(root).length !== 1) throw new Error('Вложения не удалось проверить. Пост оставлен в редакторе.');
+      if (photoAttachments(root).length !== 1 || (!settings.noAudio && (audioAttachments(root).length !== 1 || isExcludedAudio(state.audio)))) throw new Error('Вложения не удалось проверить. Пост оставлен в редакторе.');
       if (!options.automatic) { log('Пост подготовлен. Проверьте автора и вложения, затем опубликуйте в VK вручную.'); return; }
       if (!authorVerified(root)) throw new Error(`Не удалось подтвердить автора «${NAME}». Пост оставлен в редакторе. Проверьте автора; отправьте диагностику для настройки.`);
       if (state.stopped) throw new Error('Остановлено пользователем.');
       const submit=options.scheduledAt ? await prepareScheduledSubmission(options.scheduledAt) : one(control(root, /^Опубликовать$/u), 'кнопка публикации');
-      await message({type: 'beginPublish', jobId, photo: state.photo.id, audio: state.audio.id,scheduledAt:options.scheduledAt,batchId:state.batch?.id});
+      await message({type: 'beginPublish', jobId, photo: state.photo.id, audio: state.audio?.id || null,scheduledAt:options.scheduledAt,batchId:state.batch?.id});
       if (state.stopped) throw new Error('Остановлено пользователем. Проверьте стену перед новой попыткой.');
       state.stage = 'publish';state.verification=null;
       await click(submit);
@@ -1019,12 +1029,12 @@
         if(options.scheduledAt) {
           await until(()=>!currentComposerRoot(),'закрытие редактора после планирования',20000);
           if(state.batch && Object.hasOwn(state.batch,'queueDate')) {
-            const check=await message({type:'pendingInspect',batchId:state.batch.id,text:text.split('\n')[0],date:options.scheduledAt});
+            const check=await message({type:'pendingInspect',batchId:state.batch.id,text:text.split('\n')[0],date:options.scheduledAt,verifyDateOnly:settings.noText});
             state.verification=check;
             if(!check.found) throw new Error('Новая запись с выбранным текстом и датой не найдена в «Отложенные».');
           } else {
             const pending=await openPending();
-            await until(()=>scheduledPosts(pending).find(post=>post.textContent.includes(text.split('\n')[0]) &&
+            await until(()=>scheduledPosts(pending).find(post=>(!text || post.textContent.includes(text.split('\n')[0])) &&
               pendingPostDate(post)===options.scheduledAt),'новая запись с выбранной датой в «Отложенные»',20000);
           }
         } else await until(() => all(document, '[data-testid="post"],.wall_item').find(post =>
@@ -1033,7 +1043,7 @@
         state.verification={...state.verification,error:verificationError.message};
         if(options.scheduledAt && state.batch && !currentComposerRoot() && !state.stopped && !state.batchStopped) {
           await message({type:'completePublish',jobId,unconfirmed:true});
-          log('Отправка не подтверждена. Продолжаю без повторной отправки; дата будет в итоговом списке.');
+          log(`Отправка не подтверждена: ${new Date(options.scheduledAt).toLocaleString('ru-RU',{timeZone:'Europe/Moscow'})} (Москва). Продолжаю без повторной отправки.`);
           outcome={success:true,unconfirmed:true};return outcome;
         }
         if(options.scheduledAt && state.batch)throw new Error('Результат отправки не подтверждён: запись могла попасть в «Отложенные». Партия остановлена без повторной отправки. Можно начать новую партию.');
@@ -1068,16 +1078,17 @@
       const heartbeat=setInterval(()=>message({type:'batchHeartbeat',batchId:options.batch.id}).catch(()=>{}),20000);
       (async()=>{
         try {
-          let found=options.text ? false : undefined;
+          const checkingPost=!!options.text || options.verifyDateOnly===true;
+          let found=checkingPost ? false : undefined;
           const observed=[];
           const latest=await latestPendingDate((post,date)=>{
-            const textMatches=options.text ? normalize(post.textContent).includes(normalize(options.text)) : undefined;
+            const textMatches=options.text ? normalize(post.textContent).includes(normalize(options.text)) : options.verifyDateOnly===true ? true : undefined;
             if(textMatches && date===options.date)found=true;
             if(observed.length<60)observed.push({id:post.id,date,textMatches});
           });
           reply({ok:true,latest,found,verification:{expectedText:options.text,expectedDate:options.date,observed}});
         } catch(error) {
-          try {await message({type:'diagnostic',data:diagnostics(error.message),download:!options.text && !state.stopped,batchId:options.batch.id});}catch{}
+          try {await message({type:'diagnostic',data:diagnostics(error.message),download:!options.text && !options.verifyDateOnly && !state.stopped,batchId:options.batch.id});}catch{}
           reply({ok:false,error:error.message});
         } finally {clearInterval(heartbeat);state.batch=null;}
       })();return true;

@@ -3,7 +3,9 @@
   const defaults = Object.freeze({
     communityUrl: '',
     artist: 'Три слога',
-    documentUrl: 'https://docs.google.com/document/d/1P-uauTVZ_u8GkYct3f7UN__g6pTFS8y-/edit'
+    documentUrl: '',
+    noAudio: false,
+    noText: false
   });
   function normalizeSettings(value = defaults) {
     let community, document;
@@ -14,14 +16,19 @@
     const slug = community.pathname.replace(/^\/|\/$/gu,'');
     if (!/^[a-z0-9_.]+$/iu.test(slug) || /^(?:id\d+|feed|im|audio|video|photos|friends|settings|login)$/iu.test(slug))
       throw new Error('Укажите страницу сообщества, например https://vk.ru/club123, а не профиль или запись.');
+    const noAudio = value.noAudio === true, noText = value.noText === true;
     const artist = String(value.artist || '').replace(/\s+/gu,' ').trim();
-    if (!artist || artist.length > 200) throw new Error('Укажите имя исполнителя (до 200 символов).');
-    try { document = new URL(String(value.documentUrl || '').trim()); }
-    catch { throw new Error('Укажите ссылку на Google Документ.'); }
-    const id = document.pathname.match(/^\/document\/(?:u\/\d+\/)?d\/([a-zA-Z0-9_-]+)(?:\/|$)/u)?.[1];
-    if (document.protocol !== 'https:' || document.hostname !== 'docs.google.com' || document.port || document.username || document.password || !id)
-      throw new Error('Нужна ссылка вида https://docs.google.com/document/d/ID/edit.');
-    return {communityUrl:`${community.origin}/${slug}`,artist,documentUrl:`https://docs.google.com/document/d/${id}/edit`};
+    if (!noAudio && (!artist || artist.length > 200)) throw new Error('Укажите имя исполнителя (до 200 символов).');
+    let documentUrl = String(value.documentUrl || '').trim();
+    if (!noText) {
+      try { document = new URL(documentUrl); }
+      catch { throw new Error('Укажите ссылку на Google Документ.'); }
+      const id = document.pathname.match(/^\/document\/(?:u\/\d+\/)?d\/([a-zA-Z0-9_-]+)(?:\/|$)/u)?.[1];
+      if (document.protocol !== 'https:' || document.hostname !== 'docs.google.com' || document.port || document.username || document.password || !id)
+        throw new Error('Нужна ссылка вида https://docs.google.com/document/d/ID/edit.');
+      documentUrl = `https://docs.google.com/document/d/${id}/edit`;
+    }
+    return {communityUrl:`${community.origin}/${slug}`,artist,documentUrl,noAudio,noText};
   }
   const documentExport = settings => normalizeSettings(settings).documentUrl.replace(/\/edit$/u,'/export?format=html');
   async function loadSettings() {

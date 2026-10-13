@@ -4,9 +4,10 @@
 <header><span class="mark">AZ</span><div><h1>AZ_vk_poster</h1><p>Партия отложенных публикаций VK</p></div></header>
 <label for="communityUrl">Ссылка на сообщество VK</label>
 <input id="communityUrl" type="url" placeholder="https://vk.ru/club123" autocomplete="off">
-<label for="artist">Исполнитель</label>
+<div class="setting-heading"><label for="artist">Исполнитель для прикрепленных треков</label><label class="check"><input id="noAudio" type="checkbox">Без аудио</label></div>
+<p class="hint artist-default">по умолчанию группа Три слога</p>
 <input id="artist" type="text" value="Три слога" maxlength="200" autocomplete="off">
-<label for="documentUrl">Ссылка на Google Документ с текстами</label>
+<div class="setting-heading"><label for="documentUrl">Ссылка на Google Документ с текстами</label><label class="check"><input id="noText" type="checkbox">Без текста</label></div>
 <input id="documentUrl" type="url" placeholder="https://docs.google.com/document/d/…/edit" autocomplete="off">
 <p class="hint">Доступ к документу — по ссылке. Песни — заголовки, куплеты разделены пустыми строками.</p>
 <button id="saveSettings">Сохранить настройки</button>

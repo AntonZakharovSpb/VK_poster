@@ -26,7 +26,7 @@ class ExtensionTests(unittest.TestCase):
         self.page.goto('https://vk.ru/tri_sloga_band')
         self.page.add_script_tag(path=str(EXT/'config.js'))
         self.page.evaluate('''() => {
-          window.fixtureSettings = {...AZVK.defaults,communityUrl:'https://vk.ru/tri_sloga_band'};
+          window.fixtureSettings = {...AZVK.defaults,communityUrl:'https://vk.ru/tri_sloga_band',documentUrl:'https://docs.google.com/document/d/fixture_doc/edit'};
           window.testStorage = {settings:fixtureSettings};
           window.testListeners = [];
           window.chrome = {runtime: {id:'test-extension', onMessage:{addListener(fn){testListeners.push(fn)}},
@@ -579,13 +579,14 @@ class ExtensionTests(unittest.TestCase):
         }""")
         self.page.add_script_tag(path=str(EXT/'popup.js'))
         self.page.locator('#communityUrl').fill('https://vk.ru/tri_sloga_band')
+        self.page.locator('#documentUrl').fill(self.page.evaluate('fixtureSettings.documentUrl'))
         self.page.locator('#amount').fill('5')
         self.page.locator('#interval').fill('3')
         self.page.locator('#enable').click()
         self.page.wait_for_function("document.getElementById('status').textContent.includes('из 5')")
         calls=self.page.evaluate('calls')
         self.assertEqual(calls[-1], {'type':'batchStart','amount':5,'intervalSeconds':3,'settings':self.page.evaluate('fixtureSettings')})
-        self.assertEqual(self.page.locator('input').count(),5)
+        self.assertEqual(self.page.locator('input:not([type=checkbox])').count(),5)
         self.page.locator('#disable').click()
         self.page.wait_for_function("calls.some(c=>c.type==='batchStop')")
 
@@ -618,7 +619,7 @@ class ExtensionTests(unittest.TestCase):
         self.assertEqual(self.page.evaluate('calls.at(-1)'),{'type':'batchApprove','batchId':'batch','attemptId':'attempt'})
         self.assertTrue(self.page.locator('#approve').is_hidden())
 
-    def test_popup_finished_batch_lists_uncertain_dates_in_moscow(self):
+    def test_popup_finished_batch_does_not_show_unconfirmed_dates(self):
         self.page.set_content((EXT/'popup.html').read_text(encoding='utf-8'))
         self.page.evaluate('''()=>{
           chrome.storage.onChanged={addListener:()=>{}};
@@ -626,11 +627,12 @@ class ExtensionTests(unittest.TestCase):
             uncertainDates:[1792049940000,1792136340000]}});
         }''')
         self.page.add_script_tag(path=str(EXT/'popup.js'))
-        self.page.wait_for_function("document.getElementById('status').textContent.includes('15.10.2026')")
+        self.page.wait_for_function("document.getElementById('status').textContent.includes('Партия завершена')")
         text=self.page.locator('#status').inner_text()
         self.assertIn('Партия завершена',text)
-        self.assertIn('16.10.2026',text)
-        self.assertIn('10:39:00',text)
+        self.assertNotIn('Не удалось подтвердить',text)
+        self.assertNotIn('15.10.2026',text)
+        self.assertNotIn('16.10.2026',text)
         self.assertTrue(self.page.locator('#approve').is_hidden())
 
     def test_background_rejects_album_discovery_without_opening_tabs(self):

@@ -12,8 +12,12 @@ INSTALL / UPDATE
 RUN
 1. Sign in to VK with permission to create posts in your community.
 2. Open AZ_vk_poster and enter the community link, artist, and Google Docs link.
+   Community and document fields start empty. Saved settings remain saved.
    Artist defaults to «Три слога». Community links may use vk.ru or vk.com,
    a short name, club<ID>, or public<ID>.
+   «Без аудио» disables the artist field and skips music attachment.
+   «Без текста» disables the document field and skips text and document fetching.
+   Enable both options for a photo-only post.
 3. Click «Сохранить настройки». The fields remain saved when the popup closes.
 4. Set Amount and Interval (seconds between creating posts).
 5. Click «Запланировать партию» and keep Chrome and the VK tab open.
@@ -34,6 +38,9 @@ Music search first uses the selected artist and document song title.
 If that fails or no title is available, search by artist name only and select
 a random matching track, including collaborations. If none match the artist,
 take the first available search result. An entirely empty search pauses the batch.
+«Не кота бот» by «Три слога» is always excluded from audio selection.
+Unconfirmed sends remain in logs and diagnostics; their dates are not listed
+in the popup, and the batch continues without repeating the send.
 
 RECOVERY
 Solve CAPTCHA in VK and click «Ок — продолжить» in the popup.

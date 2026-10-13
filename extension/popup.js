@@ -5,11 +5,24 @@ const fixed=document.getElementById('fixed'),captcha=document.getElementById('ca
 const approve=document.getElementById('approve');
 const communityUrl=document.getElementById('communityUrl'),artist=document.getElementById('artist'),documentUrl=document.getElementById('documentUrl');
 const saveSettings=document.getElementById('saveSettings');
+const noAudio=document.getElementById('noAudio'),noText=document.getElementById('noText');
 let settingsLoaded=false;
+let batchEnabled=false;
 enable.disabled=true;saveSettings.disabled=true;
 const settingsFields=[communityUrl,artist,documentUrl];
-function inputSettings(){return AZVK.normalizeSettings({communityUrl:communityUrl.value,artist:artist.value,documentUrl:documentUrl.value});}
-function showSettings(settings){for(const field of settingsFields)field.value=settings[field.id];}
+function inputSettings(){return AZVK.normalizeSettings({communityUrl:communityUrl.value,artist:artist.value,documentUrl:documentUrl.value,noAudio:noAudio.checked,noText:noText.checked});}
+function updateSettingsFields(){
+  communityUrl.disabled=batchEnabled;
+  artist.disabled=batchEnabled||noAudio.checked;
+  documentUrl.disabled=batchEnabled||noText.checked;
+  noAudio.disabled=noText.disabled=batchEnabled;
+}
+function showSettings(settings){
+  for(const field of settingsFields)field.value=settings[field.id];
+  noAudio.checked=settings.noAudio===true;noText.checked=settings.noText===true;
+  updateSettingsFields();
+}
+noAudio.onchange=noText.onchange=updateSettingsFields;
 let approval=null;
 let uncertain=false;
 async function command(data) {
@@ -17,8 +30,9 @@ async function command(data) {
   if(!reply?.ok) throw new Error(reply?.error||'Расширение не ответило.');return reply;
 }
 function render({batch,publicationAttempt,settings}) {
+  batchEnabled=!!batch?.enabled;
   if(!settingsLoaded || batch?.enabled){showSettings(batch?.enabled && batch.settings ? batch.settings : {...AZVK.defaults,...settings});settingsLoaded=true;}
-  for(const field of settingsFields)field.disabled=!!batch?.enabled;
+  updateSettingsFields();
   saveSettings.disabled=!!batch?.enabled;
   uncertain=publicationAttempt?.status==='pending';
   approval=batch?.awaitingApproval ? {batchId:batch.id,attemptId:publicationAttempt?.jobId} : null;
@@ -36,10 +50,6 @@ function render({batch,publicationAttempt,settings}) {
   else if(batch?.error)lines.push(batch.error);
   else if(batch?.running)lines.push('Создаю отложенные записи во вкладке VK…');
   if(approval)lines.push('Если запись есть в «Отложенные», нажмите «Подтверждаю — продолжить». Учту её и создам оставшиеся посты без повторной отправки.');
-  if(batch?.uncertainDates?.length) {
-    lines.push('Не удалось подтвердить следующие отправки (Москва):');
-    for(const date of batch.uncertainDates)lines.push(new Date(date).toLocaleString('ru-RU',{timeZone:'Europe/Moscow'}));
-  }
   status.textContent=lines.join('\n');
 }
 async function refresh(){try{render(await command({type:'batchStatus'}));}catch(error){status.textContent=error.message;}}
@@ -52,7 +62,7 @@ saveSettings.onclick=async()=>{
   saveSettings.disabled=true;
   try{const reply=await command({type:'settingsSave',settings:inputSettings()});showSettings(reply.settings);status.textContent='Настройки сохранены.';}
   catch(error){status.textContent=error.message;}
-  finally{saveSettings.disabled=!settingsLoaded || settingsFields.some(field=>field.disabled);}
+  finally{saveSettings.disabled=!settingsLoaded || batchEnabled;}
 };
 disable.onclick=async()=>{try{render(await command({type:'batchStop'}));}catch(error){status.textContent=error.message;}};
 approve.onclick=async()=>{
