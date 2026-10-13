@@ -1,8 +1,10 @@
 # AZ_vk_poster
 
-Chrome extension for VK communities. Version 0.7.0 creates a finite batch of scheduled posts with your chosen community, artist and text source: Google Docs, a random internet quote about a supplied word or phrase, or one custom text for all posts.
+Chrome extension for VK communities. Version 0.7.1 creates a finite batch of scheduled posts with your chosen community, artist and text source: Google Docs, a random internet quote about a supplied word or phrase, or one custom text for all posts.
 
 Full download, installation, use and update instructions for new users: [USER_GUIDE.txt](USER_GUIDE.txt). The repository is private; a new user needs GitHub access from its owner.
+
+Documents without headings choose one whole numbered or dash-prefixed list item first, otherwise one section separated by blank lines, otherwise one paragraph. The footer is the community name. Documents with headings keep their existing song/verse selection.
 
 Document excerpts end with the community name and document heading, when present. Quotes are fetched from Russian Wikiquote, require an explicit author, and end with a link to their source page. Custom text keeps its line breaks and ends with the community name. Quote/custom modes search music by artist without a document song title. The app version is shown in the popup and diagnostics and increases with every requested change.
 

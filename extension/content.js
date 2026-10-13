@@ -619,8 +619,36 @@
     const doc = new DOMParser().parseFromString(html, 'text/html');
     const songs = [];
     let song;
-    if (!doc.querySelector('h1,h2,h3,h4,h5,h6') && doc.querySelector('style') && !doc.querySelector('form,input[type="password"]')) {
-      song = {title:'',lines:[]}; songs.push(song);
+    if (!doc.querySelector('h1,h2,h3,h4,h5,h6')) {
+      // Google Docs exports include styles. Reject login/error forms as before.
+      if (!doc.querySelector('style') || doc.querySelector('form,input[type="password"]')) return [];
+      const read = block => {
+        const clone = block.cloneNode(true);
+        for (const br of all(clone,'br')) br.replaceWith(doc.createTextNode('\n'));
+        for (const p of all(clone,'p')) p.after(doc.createTextNode('\n'));
+        return clone.textContent.replace(/\u00a0/gu,' ').trim();
+      };
+      const paragraphs = all(doc.body,'p').filter(p=>!p.closest('li')).map(read);
+      const nativeItems = all(doc.body,'ol > li,ul > li').filter(li=>!li.parentElement.closest('li')).map(read).filter(Boolean);
+      let parts = nativeItems;
+      if (!parts.length) {
+        const items = [];
+        let item = null;
+        for (const line of paragraphs.join('\n').split('\n')) {
+          const marker = line.match(/^\s*(?:\d+\s*[.)-]|-)\s+(.+)$/u);
+          if (marker) {
+            if (item !== null) items.push(item.trim());
+            item = marker[1];
+          } else if (item !== null) item += '\n'+line;
+        }
+        if (item !== null) items.push(item.trim());
+        parts = items.filter(Boolean);
+      }
+      if (!parts.length) {
+        const groups = paragraphs.join('\n').split(/\n[ \t]*\n+/u).map(part=>part.trim()).filter(Boolean);
+        parts = groups.length > 1 ? groups : paragraphs.filter(Boolean);
+      }
+      return parts.length ? [{title:'',text:parts.join('\n\n'),parts}] : [];
     }
     for (const block of all(doc.body, 'h1,h2,h3,h4,h5,h6,p')) {
       if (/^H[1-6]$/u.test(block.tagName)) {

@@ -68,6 +68,34 @@ class TextModeTests(unittest.TestCase):
         self.assertEqual(self.page.evaluate('TriSloga.chooseSongExcerpt("<style>p{color:black}</style><p>Просто текст</p>",()=>0)'),
                          {'title':'','text':'Просто текст\n\nДругое сообщество'})
 
+    def test_untitled_documents_choose_lists_then_blank_parts_then_paragraphs(self):
+        self.content('<p>fixture</p>')
+        self.configure()
+        cases = [
+            ('<p>Введение</p><p>1. Первый пост</p><p>Продолжение первого</p><p></p><p>2) Второй пост</p><p>Продолжение второго</p>',
+             ['Первый пост\nПродолжение первого','Второй пост\nПродолжение второго']),
+            ('<p>- Первый пост</p><p>Ещё строка</p><p></p><p>- Второй пост</p><p>Ещё строка второго</p>',
+             ['Первый пост\nЕщё строка','Второй пост\nЕщё строка второго']),
+            ('<ol><li><p>Первый пост</p><p>Вторая строка</p></li><li>Второй пост</li></ol>',
+             ['Первый пост\nВторая строка','Второй пост']),
+            ('<ul><li>Первый пост</li><li>Второй пост</li></ul>', ['Первый пост','Второй пост']),
+            ('<p>Первая часть</p><p>Её продолжение</p><p><br></p><p>Вторая часть</p><p>Её продолжение</p>',
+             ['Первая часть\nЕё продолжение','Вторая часть\nЕё продолжение']),
+            ('<p>Первый абзац</p><p>Второй абзац<br>Вторая строка</p>',
+             ['Первый абзац','Второй абзац\nВторая строка']),
+            ('<p>1. Первый пост<br>2. Второй пост</p>', ['Первый пост','Второй пост']),
+            ('<p>Единственный абзац</p>', ['Единственный абзац']),
+        ]
+        for body, expected in cases:
+            with self.subTest(body=body):
+                html='<style>p{color:black}</style>'+body
+                songs=self.page.evaluate('html=>TriSloga.parseSongs(html)',html)
+                self.assertEqual(songs[0]['parts'],expected)
+                for index, part in enumerate(expected):
+                    result=self.page.evaluate('v=>TriSloga.chooseSongExcerpt(v.html,()=>v.random)',
+                                              {'html':html,'random':(index+0.1)/len(expected)})
+                    self.assertEqual(result,{'title':'','text':part+'\n\nДругое сообщество'})
+
     def test_selected_text_source_validation_and_migration(self):
         for mode, field, text in [('quote','quoteReference','дружба'),('manual','customText','Мой текст')]:
             value={**test_settings.CUSTOM,'documentUrl':'','textMode':mode,field:text}
