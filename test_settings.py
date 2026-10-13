@@ -159,7 +159,7 @@ class SettingsPageTests(unittest.TestCase):
           window.queries=[];document.querySelector('[data-testid=posting_audio_search_audio_input]').oninput=e=>queries.push(e.target.value);
         }""",{'settings':CUSTOM,'community':COMMUNITY})
         self.page.evaluate('TriSloga.attachAudio()')
-        self.assertEqual(self.page.evaluate('queries'),['Другой артист Missing','Другой артист Reserve'])
+        self.assertEqual(self.page.evaluate('queries'),['Другой артист Missing','Другой артист'])
         self.assertEqual(self.page.evaluate('TriSloga.state.audio.artist'),'Другой артист')
         self.assertEqual(self.page.evaluate('TriSloga.state.sourceAudio.artist'),'Someone else')
 
@@ -173,6 +173,76 @@ class SettingsPageTests(unittest.TestCase):
         stale=self.page.evaluate('''()=>new Promise(resolve=>testListeners[0]({type:'lyrics',batchId:'wrong'},{id:'test-extension',url:location.href,tab:{id:7}},resolve))''')
         self.assertFalse(stale['ok'])
         self.assertEqual(self.page.evaluate('fetched.length'),1)
+
+    def music_search_fixture(self,title,title_results,artist_results,random=0.99):
+        self.content('''<div id=editor data-testid=posting_modal_box role=dialog>
+          <div contenteditable=true></div><button onclick="picker.hidden=false">Музыка</button></div>
+          <div id=picker role=dialog hidden><input data-testid=posting_audio_search_audio_input placeholder="Поиск музыки">
+          <div id=rows></div><button id=done>Готово</button></div>''')
+        self.page.evaluate('''options=>{
+          window.queries=[];Math.random=()=>options.random;
+          TriSloga.state.songTitle=options.title;
+          TriSloga.state.audio={id:'-220995299_999',title:'Reserve title',artist:'Another artist'};
+          TriSloga.state.audioSelectionVerified=null;
+          TriSloga.state.composer={root:editor,editor:editor.querySelector('[contenteditable]'),modern:true};
+          document.querySelector('[data-testid=posting_audio_search_audio_input]').oninput=e=>{
+            queries.push(e.target.value);rows.replaceChildren();
+            const results=e.target.value==='Три слога' ? options.artistResults : options.titleResults;
+            for(const [artist,title,id] of results){
+              const row=document.createElement('div');row.dataset.testid='posting_audio_audio_track_row';
+              if(id)row.dataset.audioId=id;
+              row.innerHTML='<div data-testid=music-cell><span data-testid=music-cell-title></span><span data-testid=music-cell-artists></span><span>3:24</span></div><input data-testid=posting_audio_audio_track_selected_icon type=checkbox>';
+              row.querySelector('[data-testid=music-cell-title]').textContent=title;
+              row.querySelector('[data-testid=music-cell-artists]').textContent=artist;
+              rows.append(row);
+            }
+          };
+          done.onclick=()=>{
+            const checked=rows.querySelectorAll('input:checked');if(checked.length!==1)throw Error('Select exactly one track');
+            const row=checked[0].parentElement;
+            const preview=document.createElement('div');preview.dataset.testid='posting_audio_select_audio_selected';
+            for(const selector of ['[data-testid=music-cell-title]','[data-testid=music-cell-artists]'])preview.append(row.querySelector(selector).cloneNode(true));
+            editor.append(preview);picker.hidden=true;
+          };
+        }''',{'title':title,'titleResults':title_results,'artistResults':artist_results,'random':random})
+
+    def test_matching_document_title_is_preferred_over_random_artist_tracks(self):
+        self.music_search_fixture('Wanted',[['Other','Wanted','1_1'],['Три слога','Wanted','1_2'],['Три слога','Wanted (Live)','1_3']],[])
+        self.page.evaluate('TriSloga.attachAudio()')
+        self.assertEqual(self.page.evaluate('queries'),['Три слога Wanted'])
+        self.assertEqual(self.page.evaluate('TriSloga.state.audio.id'),'1_2')
+
+    def test_missing_title_chooses_random_matching_artist_track_and_ignores_reserve(self):
+        self.music_search_fixture(None,[],[['Other','Foreign'],['Три слога','First'],['Три слога','Second']])
+        self.page.evaluate('TriSloga.attachAudio()')
+        self.assertEqual(self.page.evaluate('queries'),['Три слога'])
+        self.assertEqual(self.page.evaluate('TriSloga.state.audio.title'),'Second')
+        self.assertEqual(self.page.evaluate('TriSloga.audioAttachments(editor).length'),1)
+
+    def test_failed_document_title_retries_artist_only_and_chooses_random_collaboration(self):
+        self.music_search_fixture('Wanted',[['Друзья Тимофея','Wanted']],
+          [['Other','Foreign'],['Три слога','First'],['Guest, Три слога','Second']])
+        self.page.evaluate('TriSloga.attachAudio()')
+        self.assertEqual(self.page.evaluate('queries'),['Три слога Wanted','Три слога'])
+        self.assertEqual(self.page.evaluate('TriSloga.state.audio.title'),'Second')
+        self.assertEqual(self.page.evaluate('TriSloga.state.audio.artist'),'Guest, Три слога')
+        self.assertEqual(self.page.evaluate('TriSloga.audioAttachments(editor).length'),1)
+
+    def test_no_artist_match_attaches_first_search_result_from_other_artist(self):
+        self.music_search_fixture(None,[],[['Друзья Тимофея','First'],['Other','Second']])
+        self.page.evaluate('TriSloga.attachAudio()')
+        self.assertEqual(self.page.evaluate('queries'),['Три слога'])
+        self.assertEqual(self.page.evaluate('TriSloga.state.audio.title'),'First')
+        self.assertEqual(self.page.evaluate('TriSloga.state.audio.artist'),'Друзья Тимофея')
+        self.assertEqual(self.page.evaluate('TriSloga.audioAttachments(editor).length'),1)
+        self.assertEqual(self.page.locator('input[type=checkbox]:checked').count(),1)
+
+    def test_entirely_empty_music_search_stops_without_attaching_a_track(self):
+        self.music_search_fixture('',[],[])
+        error=self.page.evaluate('async()=>{try{await TriSloga.attachAudio()}catch(e){return e.message}}')
+        self.assertIn('первый результат поиска музыки',error)
+        self.assertEqual(self.page.locator('[data-testid=posting_audio_select_audio_selected]').count(),0)
+        self.assertIsNone(self.page.evaluate('TriSloga.state.audioSelectionVerified'))
 
 class SettingsBackgroundTests(unittest.TestCase):
     setUpClass=classmethod(test_batch.BatchBackgroundTests.setUpClass.__func__)

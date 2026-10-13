@@ -164,7 +164,7 @@ class ExtensionTests(unittest.TestCase):
         self.assertTrue(self.page.locator('input[type="checkbox"]').is_checked())
         self.assertIn('Песня сообщества прикреплена',self.page.evaluate('TriSloga.state.logs.at(-1)'))
 
-    def test_document_title_search_prefers_band_or_community_fallback(self):
+    def test_document_title_search_prefers_band_or_artist_only_fallback(self):
         cases = [
             ('Звезда моих тревожных', [('Три слога', 'Звезда моих тревожных'), ('Три слога', 'Звезда моих тревожных (Live)')]),
             ('Много зла', [('Три слога', 'Много зла альбомная версия'), ('Три слога', 'Много зла')]),
@@ -226,7 +226,7 @@ class ExtensionTests(unittest.TestCase):
                 print(json.dumps({'chosen_title':title,'attached_artist':self.page.evaluate('TriSloga.state.audio.artist'),
                                   'attached_title':self.page.evaluate('TriSloga.state.audio.title')},ensure_ascii=True))
 
-    def test_reserve_search_uses_first_result_without_id_or_version_suffix(self):
+    def test_artist_only_fallback_selects_result_without_track_id(self):
         self.content('''<div id=editor data-testid=posting_modal_box role=dialog>
           <div contenteditable=true></div><button onclick="picker.hidden=false">Музыка</button></div>
           <div id=picker role=dialog hidden><input data-testid=posting_audio_search_audio_input placeholder="Поиск музыки">
@@ -237,6 +237,7 @@ class ExtensionTests(unittest.TestCase):
           </div></div><button id=done>Готово</button></div>''')
         self.page.evaluate('''()=>{
           window.queries=[];
+          Math.random=()=>0;
           TriSloga.state.songTitle='Дорога';
           TriSloga.state.audio={id:'-220995299_456239149',title:'Бродский версия 2026',artist:'Три слога',duration:'3:09'};
           TriSloga.state.composer={root:document.getElementById('editor'),editor:document.querySelector('[contenteditable]'),modern:true};
@@ -249,14 +250,14 @@ class ExtensionTests(unittest.TestCase):
           };
         }''')
         self.page.evaluate('TriSloga.attachAudio()')
-        self.assertEqual(self.page.evaluate('window.queries'),['Три слога Дорога','Три слога Бродский версия 2026'])
+        self.assertEqual(self.page.evaluate('window.queries'),['Три слога Дорога','Три слога'])
         self.assertEqual(self.page.evaluate('TriSloga.state.audio.title'),'Бродский')
         self.assertEqual(self.page.evaluate('TriSloga.state.sourceAudio.id'),'-220995299_456239149')
         self.assertTrue(self.page.locator('#rows input').first.is_checked())
         self.assertFalse(self.page.locator('#rows input').nth(1).is_checked())
         self.assertEqual(self.page.evaluate('TriSloga.audioAttachments(TriSloga.currentComposerRoot()).length'),1)
 
-    def test_album_version_falls_back_to_first_search_result_and_verifies_attachment(self):
+    def test_missing_document_title_searches_artist_and_verifies_random_attachment(self):
         self.content('''<div id="editor" data-testid="posting_modal_box" role="dialog">
           <div contenteditable="true"></div><button onclick="picker.hidden=false">Музыка</button></div>
           <div id="picker" role="dialog" hidden>
@@ -272,6 +273,7 @@ class ExtensionTests(unittest.TestCase):
           <button onclick="const row=document.querySelector('input[type=checkbox]:checked').parentElement;
             editor.insertAdjacentHTML('beforeend','<div data-testid=posting_audio_select_audio_selected><span>'+row.querySelector('[data-testid=music-cell-title]').textContent+'</span><span>Три слога</span></div>');picker.hidden=true;">Готово</button></div>''')
         self.page.evaluate('''()=>{
+          Math.random=()=>0;
           TriSloga.state.audio={id:'-220995299_11',title:'Много зла альбомная версия',artist:'Три слога',duration:'4:04'};
           TriSloga.state.composer={editor:document.querySelector('[contenteditable]'),root:document.getElementById('editor'),modern:true};
         }''')
@@ -280,7 +282,7 @@ class ExtensionTests(unittest.TestCase):
         self.assertEqual(self.page.evaluate('TriSloga.state.sourceAudio.id'), '-220995299_11')
         self.assertEqual(self.page.evaluate('TriSloga.audioAttachments(document.getElementById("editor")).length'),1)
         self.assertEqual(self.page.locator('input[type=checkbox]:checked').count(),1)
-        self.assertEqual(self.page.locator('[data-testid=posting_audio_search_audio_input]').input_value(),'Три слога Много зла')
+        self.assertEqual(self.page.locator('[data-testid=posting_audio_search_audio_input]').input_value(),'Три слога')
 
     def test_duplicate_music_matches_choose_first_without_error(self):
         self.test_modern_music_picker_uses_inner_dialog_checkbox_and_done()

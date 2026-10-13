@@ -30,9 +30,10 @@ Scheduling is unchanged: inspect the selected community's postponed queue,
 start one day after its latest post, preserve its Moscow time, then use one
 consecutive day per new post. An explicitly empty queue starts tomorrow.
 Photos remain random native photos of the selected community.
-Music search uses the selected artist and song title, including collaborations.
-A reserve community song title may be used with the selected artist; tracks
-credited only to other artists are not selected.
+Music search first uses the selected artist and document song title.
+If that fails or no title is available, search by artist name only and select
+a random matching track, including collaborations. If none match the artist,
+take the first available search result. An entirely empty search pauses the batch.
 
 RECOVERY
 Solve CAPTCHA in VK and click «Ок — продолжить» in the popup.
