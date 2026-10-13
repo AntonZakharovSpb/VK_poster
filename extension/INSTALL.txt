@@ -1,4 +1,4 @@
-AZ_vk_poster — Chrome extension 0.8.0
+AZ_vk_poster — Chrome extension 0.9.0
 
 Full new-user guide: ../USER_GUIDE.txt (Russian).
 Text modes: Google Docs link, internet quote by topic with source (author optional),
@@ -28,7 +28,10 @@ RUN
    «Без текста» disables the document field and skips text and document fetching.
    Enable both options for a photo-only post.
 3. Click «Сохранить настройки». The fields remain saved when the popup closes.
-4. Set Amount and Interval (seconds between creating posts).
+4. Set total Amount and Interval (seconds between creating posts).
+   Choose posts per day (1–12), Moscow start time, and Interval2 in hours.
+   Start time + posts per day * Interval2 must be strictly below 24:00.
+   Example: 3/day, 09:00, 2 hours -> 09:00, 11:00, 13:00 each day.
 5. Click «Запланировать партию» and keep Chrome and the VK tab open.
    Starting also saves the fields. Stop the batch before editing its settings.
 
@@ -36,12 +39,15 @@ GOOGLE DOC FORMAT
 The document must be readable through its link without signing in.
 Use heading styles for song titles and paragraphs for lyrics. Separate verses
 with empty paragraphs. The existing logic picks a random song and verse,
-then appends «<artist> - <song title>».
+then appends «<community name> - <song title>». «по-порядку» uses document order.
 
 POSTS
-Scheduling is unchanged: inspect the selected community's postponed queue,
-start one day after its latest post, preserve its Moscow time, then use one
-consecutive day per new post. An explicitly empty queue starts tomorrow.
+Inspect the full postponed queue at batch start/resume. The first day is one
+day after its latest post, or tomorrow if empty, at your chosen Moscow start time.
+Use up to the selected number of daily slots separated by Interval2 hours.
+Amount remains the total post count; the final day can contain fewer posts.
+Saved slots survive a pause/resume. After each submission, accept a closed
+editor without a new VK error; never reopen or check the queue per post.
 Photos remain random native photos of the selected community.
 Music search first uses the selected artist and document song title.
 If that fails or no title is available, search by artist name only and select
@@ -50,8 +56,7 @@ search «Три слога» and select a random eligible track by that band. A 
 and popup warning ask the user to check the exact artist name; the batch continues.
 If the fallback is also empty, pause the batch.
 «Не кота бот» by «Три слога» is always excluded from audio selection.
-Unconfirmed sends remain in logs and diagnostics; their dates are not listed
-in the popup, and the batch continues without repeating the send.
+The seconds Interval controls creation pauses, not posting times.
 
 RECOVERY
 Solve CAPTCHA in VK and click «Ок — продолжить» in the popup.

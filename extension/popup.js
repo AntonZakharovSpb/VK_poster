@@ -7,12 +7,13 @@ const communityUrl=document.getElementById('communityUrl'),artist=document.getEl
 const saveSettings=document.getElementById('saveSettings');
 const noAudio=document.getElementById('noAudio'),noText=document.getElementById('noText');
 const documentInOrder=document.getElementById('documentInOrder');
+const postsPerDay=document.getElementById('postsPerDay'),startTime=document.getElementById('startTime'),innerIntervalHours=document.getElementById('innerIntervalHours');
 let settingsLoaded=false;
 let batchEnabled=false;
 enable.disabled=true;saveSettings.disabled=true;
 const textMode=document.getElementById('textMode'),quoteReference=document.getElementById('quoteReference'),customText=document.getElementById('customText');
 document.getElementById('version').textContent='v'+AZVK.version;
-const settingsFields=[communityUrl,artist,documentUrl,textMode,quoteReference,customText];
+const settingsFields=[communityUrl,artist,documentUrl,textMode,quoteReference,customText,postsPerDay,startTime,innerIntervalHours];
 function inputSettings(){return AZVK.normalizeSettings({...Object.fromEntries(settingsFields.map(field=>[field.id,field.value])),noAudio:noAudio.checked,noText:noText.checked,documentInOrder:documentInOrder.checked});}
 function updateSettingsFields(){
   communityUrl.disabled=batchEnabled;
@@ -22,7 +23,22 @@ function updateSettingsFields(){
   textMode.disabled=quoteReference.disabled=customText.disabled=batchEnabled||noText.checked;
   for(const [mode,id] of [['document','documentFields'],['quote','quoteFields'],['manual','manualFields']])document.getElementById(id).hidden=textMode.value!==mode;
   noAudio.disabled=noText.disabled=batchEnabled;
+  postsPerDay.disabled=startTime.disabled=innerIntervalHours.disabled=batchEnabled;
+  schedulePreview();
 }
+function schedulePreview(){
+  const preview=document.getElementById('schedulePreview');
+  try {
+    const schedule=AZVK.normalizePostingSchedule({postsPerDay:postsPerDay.value,startTime:startTime.value,innerIntervalHours:innerIntervalHours.value});
+    const [hour,minute]=schedule.startTime.split(':').map(Number);
+    const times=Array.from({length:schedule.postsPerDay},(_,i)=>{
+      const minutes=hour*60+minute+i*Math.round(schedule.innerIntervalHours*60);
+      return String(Math.floor(minutes/60)).padStart(2,'0')+':'+String(minutes%60).padStart(2,'0');
+    });
+    preview.textContent='Каждый день (Москва): '+times.join(', ')+'.';
+  }catch(error){preview.textContent=error.message;}
+}
+for(const field of [postsPerDay,startTime,innerIntervalHours])field.oninput=field.onchange=schedulePreview;
 function showSettings(settings){
   for(const field of settingsFields)field.value=settings[field.id]??AZVK.defaults[field.id];
   noAudio.checked=settings.noAudio===true;noText.checked=settings.noText===true;

@@ -159,12 +159,12 @@ class BatchPageTests(unittest.TestCase):
         error=self.page.evaluate('async()=>{try{await TriSloga.latestPendingDate()}catch(e){return e.message}}')
         self.assertIn('пуст ли список',error)
 
-    def test_empty_wall_schedules_first_post_tomorrow_at_current_moscow_time(self):
+    def test_empty_wall_schedules_first_post_tomorrow_at_selected_moscow_time(self):
         self.scheduled_fixture()
         self.page.locator('#pendingList').evaluate("el=>el.innerHTML='<div data-testid=empty_wall style=height:100px></div>'")
         self.page.clock.set_fixed_time(datetime.fromisoformat('2026-10-13T13:51:49+03:00'))
         self.page.evaluate("TriSloga.runBatch({id:'empty-queue',amount:1,completed:0,intervalSeconds:1})")
-        expected=int(datetime.fromisoformat('2026-10-14T13:51:00+03:00').timestamp()*1000)
+        expected=int(datetime.fromisoformat('2026-10-14T18:30:00+03:00').timestamp()*1000)
         self.assertEqual(self.page.evaluate('savedPosts.map(post=>post.timestamp)'),[expected])
         self.assertEqual(self.page.evaluate('beginAttempts.length'),1)
         self.assertIsNone(self.page.evaluate('window.publishCount'))
@@ -229,7 +229,7 @@ class BatchPageTests(unittest.TestCase):
         self.assertEqual(self.page.evaluate('progress.map(p=>p.completed)'),[2])
         self.assertGreaterEqual(result,1000)
 
-    def test_uncertain_verification_continues_all_posts_once_without_downloads(self):
+    def test_closed_editor_accepts_all_posts_once_without_queue_verification(self):
         self.scheduled_fixture()
         self.page.evaluate('''()=>{
           window.downloads=[];window.completions=[];
@@ -244,11 +244,12 @@ class BatchPageTests(unittest.TestCase):
         self.page.evaluate("TriSloga.runBatch({id:'fixture',amount:3,completed:0,intervalSeconds:1,queueDate:1798644600000})")
         self.assertEqual(self.page.evaluate('savedPosts.length'),3)
         self.assertEqual(self.page.evaluate('progress.map(p=>p.completed)'),[1,2,3])
-        self.assertEqual(self.page.evaluate('progress.map(p=>p.unconfirmed)'),[True,True,True])
-        self.assertEqual(self.page.evaluate('completions.map(p=>p.unconfirmed)'),[True,True,True])
+        self.assertEqual(self.page.evaluate('progress.map(p=>p.unconfirmed)'),[False,False,False])
+        self.assertEqual(self.page.evaluate('completions.map(p=>!!p.unconfirmed)'),[False,False,False])
+        self.assertFalse(self.page.evaluate('sentMessages.some(msg=>msg.type==="pendingInspect")'))
         self.assertEqual(self.page.evaluate('downloads'),[])
 
-    def test_verification_request_failure_continues_without_reposting(self):
+    def test_post_completion_never_calls_unavailable_queue_verification(self):
         self.scheduled_fixture()
         self.page.evaluate('''()=>{
           const send=chrome.runtime.sendMessage;
@@ -256,8 +257,8 @@ class BatchPageTests(unittest.TestCase):
         }''')
         self.page.evaluate("TriSloga.runBatch({id:'fixture',amount:1,completed:0,intervalSeconds:1,queueDate:1798644600000})")
         self.assertEqual(self.page.evaluate('savedPosts.length'),1)
-        self.assertTrue(self.page.evaluate('progress[0].unconfirmed'))
-        self.assertEqual(self.page.evaluate('TriSloga.state.verification.error'),'Queue unavailable')
+        self.assertFalse(self.page.evaluate('progress[0].unconfirmed'))
+        self.assertEqual(self.page.evaluate('TriSloga.state.verification.method'),'editor-closed')
 
     def test_captcha_requires_user_ok_and_visible_challenge_cannot_resume(self):
         self.content('<div id=captcha>Challenge</div>')

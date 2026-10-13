@@ -26,7 +26,7 @@ class ExtensionTests(unittest.TestCase):
         self.page.goto('https://vk.ru/tri_sloga_band')
         self.page.add_script_tag(path=str(EXT/'config.js'))
         self.page.evaluate('''() => {
-          window.fixtureSettings = {...AZVK.defaults,communityUrl:'https://vk.ru/tri_sloga_band',documentUrl:'https://docs.google.com/document/d/fixture_doc/edit'};
+          window.fixtureSettings = {...AZVK.defaults,startTime:'18:30',communityUrl:'https://vk.ru/tri_sloga_band',documentUrl:'https://docs.google.com/document/d/fixture_doc/edit'};
           window.testStorage = {settings:fixtureSettings};
           window.testListeners = [];
           window.chrome = {runtime: {id:'test-extension', onMessage:{addListener(fn){testListeners.push(fn)}},
@@ -582,11 +582,12 @@ class ExtensionTests(unittest.TestCase):
         self.page.locator('#documentUrl').fill(self.page.evaluate('fixtureSettings.documentUrl'))
         self.page.locator('#amount').fill('5')
         self.page.locator('#interval').fill('3')
+        self.page.locator('#startTime').fill(self.page.evaluate('fixtureSettings.startTime'))
         self.page.locator('#enable').click()
         self.page.wait_for_function("document.getElementById('status').textContent.includes('из 5')")
         calls=self.page.evaluate('calls')
         self.assertEqual(calls[-1], {'type':'batchStart','amount':5,'intervalSeconds':3,'settings':self.page.evaluate('fixtureSettings')})
-        self.assertEqual(self.page.locator('input:not([type=checkbox]):visible').count(),5)
+        self.assertEqual(self.page.locator('input:not([type=checkbox]):visible').count(),7)
         self.page.locator('#disable').click()
         self.page.wait_for_function("calls.some(c=>c.type==='batchStop')")
 
@@ -685,7 +686,7 @@ class ExtensionTests(unittest.TestCase):
             self.page.evaluate("history.replaceState(null,'','/another_group')")
         self.content(html)
         if custom:
-            self.page.evaluate("testStorage.settings={...AZVK.defaults,communityUrl:'https://vk.ru/another_group',artist:'Другой артист',documentUrl:'https://docs.google.com/document/d/custom_doc/edit'}")
+            self.page.evaluate("testStorage.settings={...AZVK.defaults,startTime:'18:30',communityUrl:'https://vk.ru/another_group',artist:'Другой артист',documentUrl:'https://docs.google.com/document/d/custom_doc/edit'}")
         self.page.evaluate('''() => {window.sentMessages=[];chrome.runtime.sendMessage=async msg=>{
           sentMessages.push(msg);
           if(msg.type==='claim') return {ok:true,jobId:'fixture'};

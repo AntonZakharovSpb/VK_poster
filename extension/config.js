@@ -9,8 +9,44 @@
     textMode: "document",
     quoteReference: "",
     customText: "",
-    documentInOrder: false
+    documentInOrder: false,
+    postsPerDay: 1,
+    startTime: '09:00',
+    innerIntervalHours: 1
   });
+  function normalizePostingSchedule(value = {}) {
+    const postsPerDay = Number(value.postsPerDay ?? defaults.postsPerDay);
+    const startTime = String(value.startTime ?? defaults.startTime);
+    const innerIntervalHours = Number(value.innerIntervalHours ?? defaults.innerIntervalHours);
+    const match = startTime.match(/^([01]\d|2[0-3]):([0-5]\d)$/u);
+    if (!Number.isInteger(postsPerDay) || postsPerDay < 1 || postsPerDay > 12)
+      throw new Error('Постов в день: целое число от 1 до 12.');
+    if (!match) throw new Error('Укажите время начала в формате ЧЧ:ММ (Москва).');
+    const intervalMinutes = Math.round(innerIntervalHours * 60);
+    if (!Number.isFinite(innerIntervalHours) || innerIntervalHours <= 0 || innerIntervalHours >= 24 || Math.abs(innerIntervalHours*60-intervalMinutes)>0.000001)
+      throw new Error('Интервал2: положительное число часов с точностью до минуты, меньше 24.');
+    if (+match[1]*60 + +match[2] + postsPerDay*intervalMinutes >= 1440)
+      throw new Error('Начало + постов в день × Интервал2 должно быть меньше 24:00. Уменьшите интервал или выберите более раннее начало.');
+    return {postsPerDay,startTime,innerIntervalHours};
+  }
+  function postingPlan(queueDate, value, batch = {}, now = Date.now()) {
+    const schedule = normalizePostingSchedule(value);
+    const intervalMinutes = Math.round(schedule.innerIntervalHours*60);
+    const saved = batch.postingPlan;
+    const lastDate = batch.lastDate || 0;
+    if (saved && Number.isFinite(saved.startAt) && Number.isInteger(saved.startIndex) &&
+        saved.postsPerDay === schedule.postsPerDay && saved.intervalMinutes === intervalMinutes && saved.startTime === schedule.startTime &&
+        (!queueDate || queueDate <= Math.max(lastDate,saved.startAt-1))) return saved;
+    const shifted = new Date((Math.max(queueDate || 0,lastDate) || now)+3*3600000);
+    const [hour,minute] = schedule.startTime.split(':').map(Number);
+    return {startAt:Date.UTC(shifted.getUTCFullYear(),shifted.getUTCMonth(),shifted.getUTCDate()+1,hour,minute)-3*3600000,
+      startIndex:batch.completed || 0,postsPerDay:schedule.postsPerDay,startTime:schedule.startTime,intervalMinutes};
+  }
+  function postingSlot(plan, completed) {
+    const index = completed-plan.startIndex;
+    if (!Number.isInteger(index) || index<0) throw new Error('Неверная позиция в расписании партии.');
+    return plan.startAt+Math.floor(index/plan.postsPerDay)*86400000+(index%plan.postsPerDay)*plan.intervalMinutes*60000;
+  }
   function normalizeSettings(value = defaults) {
     let community, document;
     try { community = new URL(String(value.communityUrl || '').trim()); }
@@ -40,7 +76,7 @@
         throw new Error('Нужна ссылка вида https://docs.google.com/document/d/ID/edit.');
       documentUrl = `https://docs.google.com/document/d/${id}/edit`;
     }
-    return {communityUrl:`${community.origin}/${slug}`,artist,documentUrl,noAudio,noText,textMode,quoteReference,customText,documentInOrder:value.documentInOrder===true};
+    return {communityUrl:`${community.origin}/${slug}`,artist,documentUrl,noAudio,noText,textMode,quoteReference,customText,documentInOrder:value.documentInOrder===true,...normalizePostingSchedule(value)};
   }
   const documentExport = settings => normalizeSettings(settings).documentUrl.replace(/\/edit$/u,'/export?format=html');
   async function loadSettings() {
@@ -90,5 +126,5 @@
     if (numeric && numeric !== id) throw new Error('ID открытого сообщества не совпадает со ссылкой в настройках.');
     return {owner:`-${id}`,path,name,origin:location.origin};
   }
-  globalThis.AZVK = {version:"0.8.0",defaults,normalizeSettings,documentExport,loadSettings,matchesCommunity,resolveCommunity};
+  globalThis.AZVK = {version:"0.9.0",defaults,normalizePostingSchedule,postingPlan,postingSlot,normalizeSettings,documentExport,loadSettings,matchesCommunity,resolveCommunity};
 })();

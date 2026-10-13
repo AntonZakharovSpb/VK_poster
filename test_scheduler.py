@@ -23,7 +23,7 @@ class SchedulerTests(unittest.TestCase):
         self.page.goto('https://vk.ru/tri_sloga_band')
         self.page.add_script_tag(path=str(EXT/'config.js'))
         self.page.evaluate('''() => {
-          window.fixtureSettings={...AZVK.defaults,communityUrl:'https://vk.ru/tri_sloga_band',documentUrl:'https://docs.google.com/document/d/fixture_doc/edit'};
+          window.fixtureSettings={...AZVK.defaults,startTime:'18:30',communityUrl:'https://vk.ru/tri_sloga_band',documentUrl:'https://docs.google.com/document/d/fixture_doc/edit'};
           window.store={settings:fixtureSettings}; window.calls=[]; window.alarms={}; window.listeners={};
           window.chrome={
             storage:{local:{get:async keys=>Object.fromEntries((Array.isArray(keys)?keys:[keys]).map(k=>[k,store[k]])),

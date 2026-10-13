@@ -5,7 +5,7 @@ import test_extension
 import test_batch
 
 EXT=Path(__file__).parent/'extension'
-CUSTOM={'communityUrl':'https://vk.ru/another_group','artist':'Другой артист','documentUrl':'https://docs.google.com/document/d/custom_doc/edit','noAudio':False,'noText':False,'textMode':'document','quoteReference':'','customText':'','documentInOrder':False}
+CUSTOM={'communityUrl':'https://vk.ru/another_group','artist':'Другой артист','documentUrl':'https://docs.google.com/document/d/custom_doc/edit','noAudio':False,'noText':False,'textMode':'document','quoteReference':'','customText':'','documentInOrder':False,'postsPerDay':1,'startTime':'18:30','innerIntervalHours':1}
 COMMUNITY={'owner':'-123456','path':'/another_group','name':'Другое сообщество','origin':'https://vk.ru'}
 
 class SettingsPageTests(unittest.TestCase):

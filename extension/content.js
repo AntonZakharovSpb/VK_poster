@@ -771,7 +771,7 @@
   function diagnostics(error = '') {
     const scope = currentComposerRoot() || document;
     return {version: AZVK.version, time: new Date().toISOString(), stage: state.stage, error,
-      batch:state.batch ? {id:state.batch.id,amount:state.batch.amount,completed:state.batch.completed,intervalSeconds:state.batch.intervalSeconds} : null,
+      batch:state.batch ? {id:state.batch.id,amount:state.batch.amount,completed:state.batch.completed,intervalSeconds:state.batch.intervalSeconds,postingPlan:state.batch.postingPlan} : null,
       plannedAt:state.plannedAt,captchaPaused:!!state.captchaPaused,verification:state.verification,
       queueScan:state.queueScan,
       scheduledPostHeaders:scheduledPosts(document).slice(0,40).map(post=>({id:post.id,
@@ -1052,8 +1052,8 @@
     try {
       await captchaGate();
       const latest=Object.hasOwn(batch,'queueDate') ? batch.queueDate : await latestPendingDate();
-      let previous=Math.floor(Math.max(latest||0,batch.lastDate||0)/60000)*60000;
-      if(!previous) {const p=dateParts(Date.now());previous=moscowDate(+p.year,+p.month,+p.day,+p.hour,+p.minute);}
+      const plan=AZVK.postingPlan(latest,settings,batch);
+      state.batch.postingPlan=plan;
       if(batch.waitBeforeNext) {
         state.stage='batch interval';
         let remaining=batch.intervalSeconds*1000;
@@ -1061,13 +1061,12 @@
       }
       for(let completed=batch.completed;completed<batch.amount;completed++) {
         if(state.batchStopped) throw new Error('Остановлено пользователем.');
-        const planned=previous+86400000;
+        const planned=AZVK.postingSlot(plan,completed);
         state.plannedAt=planned;
         const result=await run({automatic:true,scheduledAt:planned});
         if(!result?.success) throw new Error(result?.error||'Отложенная запись не подтверждена.');
         await message({type:'batchProgress',batchId:batch.id,completed:completed+1,lastDate:planned,unconfirmed:!!result.unconfirmed});
         state.batch.completed=completed+1;state.batch.lastDate=planned;
-        previous=planned;
         if(completed+1<batch.amount) {
           state.stage='batch interval';
           let remaining=batch.intervalSeconds*1000;
@@ -1134,30 +1133,27 @@
       await message({type: 'beginPublish', jobId, photo: state.photo.id, audio: state.audio?.id || null,scheduledAt:options.scheduledAt,batchId:state.batch?.id});
       if (state.stopped) throw new Error('Остановлено пользователем. Проверьте стену перед новой попыткой.');
       state.stage = 'publish';state.verification=null;
+      const alerts='[role="alert"],.box_error,.posting_error,[data-testid*="posting_error"]';
+      const previousAlerts=new Map(all(document,alerts).map(el=>[el,{text:normalize(el.textContent),visible:visible(el)}]));
       await click(submit);
-      log('Публикация отправлена один раз. Проверяю результат…');
+      log(options.scheduledAt ? 'Публикация отправлена один раз. Жду закрытия редактора…' : 'Публикация отправлена один раз. Проверяю результат…');
       try {
         if(options.scheduledAt) {
-          await until(()=>!currentComposerRoot(),'закрытие редактора после планирования',20000);
-          if(state.batch && Object.hasOwn(state.batch,'queueDate')) {
-            const check=await message({type:'pendingInspect',batchId:state.batch.id,text:text.split('\n')[0],date:options.scheduledAt,verifyDateOnly:settings.noText});
-            state.verification=check;
-            if(!check.found) throw new Error('Новая запись с выбранным текстом и датой не найдена в «Отложенные».');
-          } else {
-            const pending=await openPending();
-            await until(()=>scheduledPosts(pending).find(post=>(!text || post.textContent.includes(text.split('\n')[0])) &&
-              pendingPostDate(post)===options.scheduledAt),'новая запись с выбранной датой в «Отложенные»',20000);
-          }
+          await until(()=>{
+            const failure=all(document,alerts).find(el=>{
+              const text=normalize(el.textContent),previous=previousAlerts.get(el);
+              return visible(el) && text && (!previous?.visible || previous.text!==text) &&
+                (el.matches('.box_error,.posting_error,[data-testid*="posting_error"]') || /ошиб|не удалось|не добавлен|невозможно|уже занят|лимит|попробуйте позже|failed|error/iu.test(text));
+            });
+            if(failure)throw new Error('VK: '+normalize(failure.textContent));
+            return !currentComposerRoot();
+          },'закрытие редактора после планирования',20000);
+          state.verification={accepted:true,method:'editor-closed',scheduledAt:options.scheduledAt};
         } else await until(() => all(document, '[data-testid="post"],.wall_item').find(post =>
           visible(post) && post.textContent.includes(text.split('\n')[0])), 'новая публикация на стене', 20000);
       } catch (verificationError) {
         state.verification={...state.verification,error:verificationError.message};
-        if(options.scheduledAt && state.batch && !currentComposerRoot() && !state.stopped && !state.batchStopped) {
-          await message({type:'completePublish',jobId,unconfirmed:true});
-          log(`Отправка не подтверждена: ${new Date(options.scheduledAt).toLocaleString('ru-RU',{timeZone:'Europe/Moscow'})} (Москва). Продолжаю без повторной отправки.`);
-          outcome={success:true,unconfirmed:true};return outcome;
-        }
-        if(options.scheduledAt && state.batch)throw new Error('Результат отправки не подтверждён: запись могла попасть в «Отложенные». Партия остановлена без повторной отправки. Можно начать новую партию.');
+        if(options.scheduledAt)throw verificationError;
         throw new Error('Результат отправки не подтверждён. Проверьте стену и «Отложенные»: пост мог появиться. Повторная отправка заблокирована.');
       }
       await message({type: 'completePublish', jobId});

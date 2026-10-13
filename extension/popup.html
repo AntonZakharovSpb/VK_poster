@@ -12,19 +12,22 @@
 <div id="documentFields"><label for="documentUrl">Ссылка на Google Документ с текстами</label>
 <input id="documentUrl" type="url" placeholder="https://docs.google.com/document/d/…/edit" autocomplete="off">
 <label class="check"><input id="documentInOrder" type="checkbox">по-порядку</label>
-<p class="hint">Доступ к документу — по ссылке. Песни — заголовки, куплеты разделены пустыми строками.</p>
+<p class="hint">Доступ к документу — по ссылке.</p>
 </div>
 <div id="quoteFields" hidden><label for="quoteReference">Слово или фраза для цитаты</label><input id="quoteReference" maxlength="200" placeholder="Например: любовь или дружба"><p class="hint">Викицитатник: случайная цитата по теме и ссылка на источник. Автор — если указан.</p></div>
 <div id="manualFields" hidden><label for="customText">Текст для всех постов</label><textarea id="customText" rows="3" maxlength="12000" placeholder="Введите свой текст"></textarea><p class="hint">Одинаковый текст в каждом посте. Подпись — название сообщества.</p></div>
 <button id="saveSettings">Сохранить настройки</button>
 <div class="batch-fields"><div>
-<label for="amount">Постов (Amount)</label>
+<label for="amount">Всего постов (Amount)</label>
 <input id="amount" type="number" min="1" max="1000" step="1" value="10">
 </div><div>
 <label for="interval">Пауза, сек. (Interval)</label>
 <input id="interval" type="number" min="1" max="86400" step="1" value="30">
 </div></div>
-<details class="schedule-help"><summary>Как выбираются даты публикаций</summary><p class="hint">Начинаем на день позже последней записи в «Отложенные», сохраняя её время. Каждый следующий пост — ещё на день позже. Если список пуст, начинаем завтра в текущее московское время. Оставьте Chrome и вкладку VK открытыми до завершения партии.</p></details>
+<div class="batch-fields"><div><label for="postsPerDay">Постов в день</label><select id="postsPerDay"><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option>7</option><option>8</option><option>9</option><option>10</option><option>11</option><option>12</option></select></div><div><label for="startTime">Время начала (Москва)</label><input id="startTime" type="time" value="09:00" step="60"></div></div>
+<label for="innerIntervalHours">Интервал2 внутри дня, часы</label><input id="innerIntervalHours" type="number" min="0.01" max="23.99" step="any" value="1">
+<p class="hint" id="schedulePreview"></p>
+<details class="schedule-help"><summary>Как выбираются даты публикаций</summary><p class="hint">Первый день — завтра, если очередь пуста, или день после последнего отложенного поста. Внутри дня используем выбранное начало и Интервал2. Начало + постов в день × Интервал2 должно быть меньше 24:00. Пауза в секундах — между созданием записей. Оставьте Chrome и вкладку VK открытыми до завершения партии.</p></details>
 <div class="batch-actions">
 <button id="enable" class="primary">Запланировать партию</button>
 <button id="disable" class="secondary">Остановить</button>

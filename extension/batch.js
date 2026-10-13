@@ -88,7 +88,10 @@ async function batchLaunch(id) {
     await batchSerial(async()=>{
       const {batch}=await chrome.storage.local.get('batch');
       if (!batch?.enabled || batch.id!==id) return;
-      const response=await chrome.tabs.sendMessage(tab.id,{type:'batchStart',batch:{...batch,queueDate:queue.latest}});
+      const postingPlan=AZVK.postingPlan(queue.latest,settings,batch);
+      const nextBatch={...batch,postingPlan};
+      await chrome.storage.local.set({batch:nextBatch});
+      const response=await chrome.tabs.sendMessage(tab.id,{type:'batchStart',batch:{...nextBatch,queueDate:queue.latest}});
       if (!response?.ok) throw new Error(response?.error || 'Не удалось запустить партию.');
     });
   } catch(error) {
