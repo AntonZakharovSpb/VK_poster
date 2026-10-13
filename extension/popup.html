@@ -27,7 +27,7 @@
 <div class="batch-fields"><div><label for="postsPerDay">Постов в день</label><select id="postsPerDay"><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option>7</option><option>8</option><option>9</option><option>10</option><option>11</option><option>12</option></select></div><div><label for="startTime">Время начала (Москва)</label><input id="startTime" type="time" value="09:00" step="60"></div></div>
 <label for="innerIntervalHours">Интервал2 внутри дня, часы</label><input id="innerIntervalHours" type="number" min="0.01" max="23.99" step="any" value="1">
 <p class="hint" id="schedulePreview"></p>
-<details class="schedule-help"><summary>Как выбираются даты публикаций</summary><p class="hint">Первый день — завтра, если очередь пуста, или день после последнего отложенного поста. Внутри дня используем выбранное начало и Интервал2. Начало + постов в день × Интервал2 должно быть меньше 24:00. Пауза в секундах — между созданием записей. Оставьте Chrome и вкладку VK открытыми до завершения партии.</p></details>
+<details class="schedule-help"><summary>Как выбираются даты публикаций</summary><p class="hint">Первый день — завтра, если очередь пуста, или день после последнего отложенного поста. Внутри дня используем выбранное начало и Интервал2. Начало + (постов в день - 1) × Интервал2 должно быть меньше 24:00. Пауза в секундах — между созданием записей. Оставьте Chrome и вкладку VK открытыми до завершения партии.</p></details>
 <div class="batch-actions">
 <button id="enable" class="primary">Запланировать партию</button>
 <button id="disable" class="secondary">Остановить</button>

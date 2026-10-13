@@ -1,4 +1,4 @@
-AZ_vk_poster — Chrome extension 0.9.0
+AZ_vk_poster — Chrome extension 0.9.1
 
 Full new-user guide: ../USER_GUIDE.txt (Russian).
 Text modes: Google Docs link, internet quote by topic with source (author optional),
@@ -30,7 +30,7 @@ RUN
 3. Click «Сохранить настройки». The fields remain saved when the popup closes.
 4. Set total Amount and Interval (seconds between creating posts).
    Choose posts per day (1–12), Moscow start time, and Interval2 in hours.
-   Start time + posts per day * Interval2 must be strictly below 24:00.
+   Start time + (posts per day - 1) * Interval2 must be strictly below 24:00.
    Example: 3/day, 09:00, 2 hours -> 09:00, 11:00, 13:00 each day.
 5. Click «Запланировать партию» and keep Chrome and the VK tab open.
    Starting also saves the fields. Stop the batch before editing its settings.

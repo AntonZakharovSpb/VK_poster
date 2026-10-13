@@ -20,11 +20,17 @@ class DailySlotTests(unittest.TestCase):
         self.assertEqual(self.page.evaluate('v=>AZVK.normalizePostingSchedule(v)',valid),valid)
         for change in [{'postsPerDay':0},{'postsPerDay':13},{'postsPerDay':1.5},{'startTime':'24:00'},
                        {'startTime':'09:61'},{'innerIntervalHours':0},{'innerIntervalHours':24},
-                       {'innerIntervalHours':0.333},{'postsPerDay':3,'startTime':'18:00'},
-                       {'postsPerDay':2,'startTime':'20:00','innerIntervalHours':2}]:
+                       {'innerIntervalHours':0.333},{'postsPerDay':3,'startTime':'20:00'},
+                       {'postsPerDay':2,'startTime':'12:00','innerIntervalHours':12}]:
             with self.subTest(change=change):
                 self.assertTrue(self.page.evaluate('v=>{try{AZVK.normalizePostingSchedule(v)}catch(e){return e.message}}',{**valid,**change}))
         self.assertEqual(self.page.evaluate('AZVK.normalizePostingSchedule({postsPerDay:12,startTime:"09:00",innerIntervalHours:0.5}).postsPerDay'),12)
+        self.assertEqual(self.page.evaluate('AZVK.normalizePostingSchedule({postsPerDay:2,startTime:"09:00",innerIntervalHours:12}).innerIntervalHours'),12)
+        self.assertEqual(self.page.evaluate('AZVK.normalizePostingSchedule({postsPerDay:1,startTime:"23:59",innerIntervalHours:12}).startTime'),'23:59')
+        values=self.page.evaluate('''()=>{const plan=AZVK.postingPlan(Date.parse('2026-10-18T12:00:00+03:00'),
+          {postsPerDay:2,startTime:'09:00',innerIntervalHours:12});
+          return [0,1,2].map(i=>new Date(AZVK.postingSlot(plan,i)).toISOString());}''')
+        self.assertEqual(values,['2026-10-19T06:00:00.000Z','2026-10-19T18:00:00.000Z','2026-10-20T06:00:00.000Z'])
 
     def test_slots_start_next_day_and_handle_partial_days_and_year_rollover(self):
         values=self.page.evaluate('''()=>{
@@ -102,7 +108,7 @@ class DailySlotTests(unittest.TestCase):
         self.page.locator('#saveSettings').click()
         self.assertEqual(self.page.evaluate('calls.find(m=>m.type==="settingsSave").settings.postsPerDay'),3)
         self.assertEqual(self.page.evaluate('calls.find(m=>m.type==="settingsSave").settings.startTime'),'09:00')
-        self.page.locator('#startTime').fill('18:00')
+        self.page.locator('#startTime').fill('20:00')
         self.page.locator('#enable').click()
         self.assertFalse(self.page.evaluate('calls.some(m=>m.type==="batchStart")'))
         self.assertIn('меньше 24:00',self.page.locator('#status').inner_text())

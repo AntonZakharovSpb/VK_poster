@@ -25,8 +25,8 @@
     const intervalMinutes = Math.round(innerIntervalHours * 60);
     if (!Number.isFinite(innerIntervalHours) || innerIntervalHours <= 0 || innerIntervalHours >= 24 || Math.abs(innerIntervalHours*60-intervalMinutes)>0.000001)
       throw new Error('Интервал2: положительное число часов с точностью до минуты, меньше 24.');
-    if (+match[1]*60 + +match[2] + postsPerDay*intervalMinutes >= 1440)
-      throw new Error('Начало + постов в день × Интервал2 должно быть меньше 24:00. Уменьшите интервал или выберите более раннее начало.');
+    if (+match[1]*60 + +match[2] + (postsPerDay-1)*intervalMinutes >= 1440)
+      throw new Error('Начало + (постов в день − 1) × Интервал2 должно быть меньше 24:00. Уменьшите интервал или выберите более раннее начало.');
     return {postsPerDay,startTime,innerIntervalHours};
   }
   function postingPlan(queueDate, value, batch = {}, now = Date.now()) {
@@ -126,5 +126,5 @@
     if (numeric && numeric !== id) throw new Error('ID открытого сообщества не совпадает со ссылкой в настройках.');
     return {owner:`-${id}`,path,name,origin:location.origin};
   }
-  globalThis.AZVK = {version:"0.9.0",defaults,normalizePostingSchedule,postingPlan,postingSlot,normalizeSettings,documentExport,loadSettings,matchesCommunity,resolveCommunity};
+  globalThis.AZVK = {version:"0.9.1",defaults,normalizePostingSchedule,postingPlan,postingSlot,normalizeSettings,documentExport,loadSettings,matchesCommunity,resolveCommunity};
 })();
