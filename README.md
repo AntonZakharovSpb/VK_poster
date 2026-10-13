@@ -1,10 +1,12 @@
 # AZ_vk_poster
 
-Chrome extension for VK communities. Version 0.7.2 creates a finite batch of scheduled posts with your chosen community, artist and text source: Google Docs, a random internet quote about a supplied word or phrase, or one custom text for all posts.
+Chrome extension for VK communities. Version 0.8.0 creates a finite batch of scheduled posts with your chosen community, artist and text source: Google Docs, a random internet quote about a supplied word or phrase, or one custom text for all posts.
 
 Full download, installation, use and update instructions for new users: [USER_GUIDE.txt](USER_GUIDE.txt). The repository is private; a new user needs GitHub access from its owner.
 
 Documents without headings choose one whole numbered or dash-prefixed list item first, otherwise one section separated by blank lines, otherwise one paragraph. The footer is the community name. Documents with headings keep their existing song/verse selection.
+
+Enable **по-порядку** under the document link to use its parts in document order instead of randomly. Each new batch starts at the first part and wraps at the end; resumed batches use their saved completed-post count, and retries keep the same part. The option is off by default.
 
 Document excerpts end with the community name and document heading, when present. Quotes are fetched from Russian Wikiquote and end with a link to their source page. The author is included when available; a missing author does not reject the quote or trigger another search. Custom text keeps its line breaks and ends with the community name. Quote/custom modes search music by artist without a document song title. The app version is shown in the popup and diagnostics and increases with every requested change.
 
@@ -18,13 +20,15 @@ Document excerpts end with the community name and document heading, when present
 
 The extension reads **Отложенные посты** at `https://vk.ru/wall-<selected community ID>?postponed=1` (or the `vk.com` equivalent) in a temporary tab using the existing VK login. It loads the list, reads dates from post headers and closes that tab, leaving the community editor open. The first new post is scheduled one day later, preserving the time of day. Each subsequent post is scheduled on the next day. If the queue is explicitly empty, the first post is scheduled tomorrow at the current Moscow time. Dates use Europe/Moscow, including month/year rollover.
 
-It reads the selected Google Doc, chooses a random song and a random verse with the existing parser, and appends `<selected artist> - <song title>`. Song selection and verse selection are unchanged. Photos are selected natively in **Выбрать из ВКонтакте → Фото VK**, scrolling the community grid to load more. No thumbnail download/upload or album tabs are used.
+It reads the selected Google Doc and chooses a song verse or an untitled post item, randomly by default or in document order with **по-порядку**. The footer contains the community name and title when present. Photos are selected natively in **Выбрать из ВКонтакте → Фото VK**, scrolling the community grid to load more. No thumbnail download/upload or album tabs are used.
 
-Music search first uses **the selected artist + the document song title** and selects the first similar title credited to that artist, including collaborations. If that fails or there is no title, it searches by **artist name only** and chooses a random matching track. If no track is credited to the selected artist, it attaches the first available search result, even if credited to another artist. If the search has no tracks at all, the batch pauses. A missing or empty community music tab does not prevent searching the selected artist.
+Music search first uses **the selected artist + the document song title** and selects the first similar title credited to that artist, including collaborations. If that fails or there is no title, it searches by **artist name only** and chooses a random matching track. If no track matches the exact artist name, it searches **Три слога** and chooses a random eligible track by that band. A Chrome notification and popup warning ask the user to check the exact artist name; the warning does not pause the batch and is notified once per batch. If the fallback search also has no eligible tracks, the batch pauses. A missing or empty community music tab does not prevent searching the selected artist.
 
 **Не кота бот** credited to **Три слога**, including versions and collaborations, is excluded from every audio selection path. Another eligible track is chosen instead. With **Без текста**, music uses the artist-only search. With **Без аудио**, music search and attachment are skipped entirely. Photos and scheduling remain unchanged.
 
 The final action uses **Запланировать**, verifies the date/time inputs, and confirms the resulting post and date in **Отложенные**. The normal batch flow never clicks **Опубликовать**. Progress is saved after each confirmed scheduled post; the next post starts after Interval seconds. Browser throttling or sleep can lengthen this pause.
+
+Queue inspection scrolls to the actual bottom of the page or nested list, waits for loading indicators and a stable bottom, and keeps the maximum date seen across loaded pages. A list that never finishes loading stops the batch before choosing a date.
 
 ## CAPTCHA and recovery
 

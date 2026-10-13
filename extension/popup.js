@@ -6,17 +6,19 @@ const approve=document.getElementById('approve');
 const communityUrl=document.getElementById('communityUrl'),artist=document.getElementById('artist'),documentUrl=document.getElementById('documentUrl');
 const saveSettings=document.getElementById('saveSettings');
 const noAudio=document.getElementById('noAudio'),noText=document.getElementById('noText');
+const documentInOrder=document.getElementById('documentInOrder');
 let settingsLoaded=false;
 let batchEnabled=false;
 enable.disabled=true;saveSettings.disabled=true;
 const textMode=document.getElementById('textMode'),quoteReference=document.getElementById('quoteReference'),customText=document.getElementById('customText');
 document.getElementById('version').textContent='v'+AZVK.version;
 const settingsFields=[communityUrl,artist,documentUrl,textMode,quoteReference,customText];
-function inputSettings(){return AZVK.normalizeSettings({...Object.fromEntries(settingsFields.map(field=>[field.id,field.value])),noAudio:noAudio.checked,noText:noText.checked});}
+function inputSettings(){return AZVK.normalizeSettings({...Object.fromEntries(settingsFields.map(field=>[field.id,field.value])),noAudio:noAudio.checked,noText:noText.checked,documentInOrder:documentInOrder.checked});}
 function updateSettingsFields(){
   communityUrl.disabled=batchEnabled;
   artist.disabled=batchEnabled||noAudio.checked;
   documentUrl.disabled=batchEnabled||noText.checked;
+  documentInOrder.disabled=batchEnabled||noText.checked;
   textMode.disabled=quoteReference.disabled=customText.disabled=batchEnabled||noText.checked;
   for(const [mode,id] of [['document','documentFields'],['quote','quoteFields'],['manual','manualFields']])document.getElementById(id).hidden=textMode.value!==mode;
   noAudio.disabled=noText.disabled=batchEnabled;
@@ -24,6 +26,7 @@ function updateSettingsFields(){
 function showSettings(settings){
   for(const field of settingsFields)field.value=settings[field.id]??AZVK.defaults[field.id];
   noAudio.checked=settings.noAudio===true;noText.checked=settings.noText===true;
+  documentInOrder.checked=settings.documentInOrder===true;
   updateSettingsFields();
 }
 noAudio.onchange=noText.onchange=textMode.onchange=updateSettingsFields;
@@ -49,6 +52,7 @@ function render({batch,publicationAttempt,settings}) {
   captcha.hidden=!batch?.captcha;
   const lines=[batch?.unconfirmed?'Партия остановлена. Можно начать новую.':batch?.done?'Партия завершена.':batch?.enabled?'Партия запущена.':'Партия не запущена.'];
   if(batch?.amount)lines.push(`${batch.unconfirmed?'Подтверждено':batch.uncertainDates?.length?'Обработано':'Запланировано'}: ${batch.completed||0} из ${batch.amount}.`);
+  if(batch?.artistWarning)lines.push(batch.artistWarning);
   if(batch?.lastDate)lines.push('Последняя дата: '+new Date(batch.lastDate).toLocaleString('ru-RU',{timeZone:'Europe/Moscow'})+' (Москва).');
   if(batch?.captcha)lines.push('Решите CAPTCHA во вкладке VK и нажмите «ОК — продолжить».');
   else if(batch?.error)lines.push(batch.error);

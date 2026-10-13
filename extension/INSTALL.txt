@@ -1,10 +1,12 @@
-AZ_vk_poster — Chrome extension 0.7.2
+AZ_vk_poster — Chrome extension 0.8.0
 
 Full new-user guide: ../USER_GUIDE.txt (Russian).
 Text modes: Google Docs link, internet quote by topic with source (author optional),
 or one custom text for all posts. Choose the mode in «Текст публикаций».
 Document footer: community name + heading, if present.
 Quote footer: source link. Custom text footer: community name.
+«по-порядку» selects document parts in order, wraps at the end, and resumes
+from the batch checkpoint. Default: random. New batches start at the first part.
 «Без текста» disables every text mode and skips retrieval.
 
 INSTALL / UPDATE
@@ -44,7 +46,9 @@ Photos remain random native photos of the selected community.
 Music search first uses the selected artist and document song title.
 If that fails or no title is available, search by artist name only and select
 a random matching track, including collaborations. If none match the artist,
-take the first available search result. An entirely empty search pauses the batch.
+search «Три слога» and select a random eligible track by that band. A notification
+and popup warning ask the user to check the exact artist name; the batch continues.
+If the fallback is also empty, pause the batch.
 «Не кота бот» by «Три слога» is always excluded from audio selection.
 Unconfirmed sends remain in logs and diagnostics; their dates are not listed
 in the popup, and the batch continues without repeating the send.

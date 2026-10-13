@@ -566,8 +566,15 @@
       }
       catch (error) {
         if (state.stopped) throw error;
-        log('Песни выбранного исполнителя не найдены. Беру первый результат поиска.');
-        row = await until(() => firstSearchAudio(picker), 'первый результат поиска музыки', 3000);
+        const warning = `Исполнитель «${settings.artist}» не найден. Проверьте точное имя. Вместо него выбираю случайный трек группы «Три слога».`;
+        log(warning);
+        await message({type:'artistWarning',batchId:state.batch?.id,artist:settings.artist}).catch(error=>log('Уведомление: '+error.message));
+        if (settings.artist.toLocaleLowerCase('ru') !== 'три слога') await searchFor('Три слога');
+        const candidates = await until(() => {
+          const matches = searchAudioRows(picker).filter(item => artistMatches(audioMetadata(item).artist,'Три слога'));
+          return matches.length ? matches : null;
+        }, 'песни группы Три слога для замены исполнителя', 10000);
+        row = candidates[Math.floor(Math.random() * candidates.length)];
       }
     }
     const chosen = audioMetadata(row);
@@ -666,9 +673,14 @@
       return {title, text, parts: text.split(/\n[ \t]*\n+/u).map(part => part.trim()).filter(Boolean)};
     }).filter(song => song.text);
   }
-  function chooseSongExcerpt(html, random = Math.random) {
+  function chooseSongExcerpt(html, random = Math.random, position = state.batch?.completed || 0) {
     const songs = parseSongs(html);
     if (!songs.length) throw new Error('В документе не найден текст. Проверьте доступ и структуру документа.');
+    if (settings.documentInOrder) {
+      const entries = songs.flatMap(song=>(song.parts.length ? song.parts : [song.text]).map(text=>({title:song.title,text})));
+      const entry = entries[Math.max(0,Math.floor(position)) % entries.length];
+      return {title:entry.title,text:`${entry.text}\n\n${NAME}${entry.title ? ' - '+entry.title : ''}`};
+    }
     const song = songs[Math.floor(random() * songs.length)];
     const verse = song.parts.length ? song.parts[Math.floor(random() * song.parts.length)] : song.text;
     return {title: song.title, text: `${verse}\n\n${NAME}${song.title ? ' - '+song.title : ''}`};
@@ -761,6 +773,7 @@
     return {version: AZVK.version, time: new Date().toISOString(), stage: state.stage, error,
       batch:state.batch ? {id:state.batch.id,amount:state.batch.amount,completed:state.batch.completed,intervalSeconds:state.batch.intervalSeconds} : null,
       plannedAt:state.plannedAt,captchaPaused:!!state.captchaPaused,verification:state.verification,
+      queueScan:state.queueScan,
       scheduledPostHeaders:scheduledPosts(document).slice(0,40).map(post=>({id:post.id,
         header:normalize(post.querySelector('.post_header,[data-testid="post-header"],.post_date')?.textContent||'').slice(0,180),
         date:pendingPostDate(post)})),
@@ -859,30 +872,55 @@
   async function latestPendingDate(onPost) {
     state.stage='read scheduled posts';
     let root=await openPending();
-    let latest=null,stable=0,signature='',started=Date.now();
-    while(Date.now()-started<45000) {
-      started += await captchaGate();
+    const seen=new Set();
+    const counts=all(document,'h1,h2,h3,[role="tab"][aria-selected="true"],.ui_tab_sel').filter(visible)
+      .map(el=>label(el).match(/^Отложенные(?: посты| записи)?\s*\(?(\d+)\)?$/iu)?.[1]).filter(value=>value!==undefined).map(Number);
+    const expectedCount=counts.length ? Math.max(...counts) : null;
+    let latest=null,stable=0,signature='',started=Date.now(),changedAt=started;
+    while(Date.now()-started<120000) {
+      const paused=await captchaGate();started+=paused;changedAt+=paused;
       const posts=scheduledPosts(root);
       for(const post of posts) {
         const value=pendingPostDate(post);
         if(onPost)onPost(post,value);
         if(value===null) throw new Error('Не удалось прочитать дату отложенной записи. Нужна диагностика формата VK.');
         latest=latest===null?value:Math.max(latest,value);
+        seen.add(post.id || post.getAttribute('data-post-id') || `${value}:${normalize(post.textContent)}`);
       }
       if(!posts.length && (all(root,'[data-testid="empty_wall"]').some(visible) || /нет отложенных|отложенных (?:записей|постов) нет|пока нет|нет записей|отложенные посты\s*0(?:\D|$)/iu.test(root.textContent))) return null;
       const more=control(root,/^(Показать ещё|Показать еще|Ещё|Еще)$/u).filter(visible);
-      if(more.length===1) await click(more[0]);
+      const scrollAreas=[];
+      let scroll=root;
+      while(scroll) {
+        if(scroll.scrollHeight>scroll.clientHeight+2 && /auto|scroll/u.test(getComputedStyle(scroll).overflowY)) {scrollAreas.push(scroll);break;}
+        scroll=scroll.parentElement;
+      }
+      const page=document.scrollingElement;
+      if(page && !scrollAreas.includes(page))scrollAreas.push(page);
+      if(more.length===1 && !more[0].disabled && more[0].getAttribute('aria-disabled')!=='true') await click(more[0]);
       else {
-        let scroll=root;
-        while(scroll && !(scroll.scrollHeight>scroll.clientHeight+2 && /auto|scroll/u.test(getComputedStyle(scroll).overflowY)))scroll=scroll.parentElement;
-        if(scroll) {scroll.scrollTop=scroll.scrollHeight;scroll.dispatchEvent(new Event('scroll',{bubbles:true}));}
-        else if(posts.length) posts[posts.length-1].scrollIntoView({block:'end'});
+        // Reach the footer/loading sentinel, advancing through virtualized lists.
+        for(const area of scrollAreas) {
+          const viewport=area.clientHeight || innerHeight;
+          const top=Math.min(area.scrollHeight,area.scrollTop+Math.max(400,viewport*0.9));
+          if(area===page)window.scrollTo({top,behavior:'instant'});
+          else area.scrollTop=top;
+          area.dispatchEvent(new Event('scroll',{bubbles:true}));
+        }
+        window.dispatchEvent(new Event('scroll'));
       }
       await delay(700);
       root=pendingRoot()||root;
-      const current=`${scheduledPosts(root).length}:${root.scrollHeight}:${latest}`;
-      stable=current===signature?stable+1:0;signature=current;
-      if(stable>=4 && !more.length) {if(latest===null)throw new Error('Не удалось определить, пуст ли список «Отложенные».');return latest;}
+      const positions=scrollAreas.map(area=>`${Math.round(area.scrollTop)}:${area.scrollHeight}:${area.clientHeight}`);
+      const loading=all(root.parentElement || root,'[aria-busy="true"],[role="progressbar"],.loading,.page_loading,.wall_more_loading,[data-testid*="loading"],[data-testid*="loader"],[data-testid*="spinner"]').some(visible);
+      const atBottom=scrollAreas.every(area=>area.scrollTop+(area.clientHeight || innerHeight)>=area.scrollHeight-3);
+      const current=`${scheduledPosts(root).length}:${root.scrollHeight}:${latest}:${positions.join('|')}:${loading}`;
+      if(current===signature && atBottom && !loading && !more.length)stable++;
+      else {stable=0;changedAt=Date.now();}
+      signature=current;
+      const loadedPosts=Math.max(seen.size,scheduledPosts(root).length);
+      state.queueScan={latest,loadedPosts,expectedCount,atBottom,loading,positions};
+      if(stable>=6 && Date.now()-changedAt>=5000 && (expectedCount===null || loadedPosts>=expectedCount)) {if(latest===null)throw new Error('Не удалось определить, пуст ли список «Отложенные».');return latest;}
     }
     throw new Error('Список «Отложенные» не закончил загрузку. Дата последней записи не подтверждена.');
   }

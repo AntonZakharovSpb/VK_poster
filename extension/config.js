@@ -8,7 +8,8 @@
     noText: false,
     textMode: "document",
     quoteReference: "",
-    customText: ""
+    customText: "",
+    documentInOrder: false
   });
   function normalizeSettings(value = defaults) {
     let community, document;
@@ -39,7 +40,7 @@
         throw new Error('Нужна ссылка вида https://docs.google.com/document/d/ID/edit.');
       documentUrl = `https://docs.google.com/document/d/${id}/edit`;
     }
-    return {communityUrl:`${community.origin}/${slug}`,artist,documentUrl,noAudio,noText,textMode,quoteReference,customText};
+    return {communityUrl:`${community.origin}/${slug}`,artist,documentUrl,noAudio,noText,textMode,quoteReference,customText,documentInOrder:value.documentInOrder===true};
   }
   const documentExport = settings => normalizeSettings(settings).documentUrl.replace(/\/edit$/u,'/export?format=html');
   async function loadSettings() {
@@ -89,5 +90,5 @@
     if (numeric && numeric !== id) throw new Error('ID открытого сообщества не совпадает со ссылкой в настройках.');
     return {owner:`-${id}`,path,name,origin:location.origin};
   }
-  globalThis.AZVK = {version:"0.7.2",defaults,normalizeSettings,documentExport,loadSettings,matchesCommunity,resolveCommunity};
+  globalThis.AZVK = {version:"0.8.0",defaults,normalizeSettings,documentExport,loadSettings,matchesCommunity,resolveCommunity};
 })();

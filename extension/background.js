@@ -98,6 +98,22 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
       if(!fromVK)throw new Error('Запрос должен поступить из VK.');
       return batchCommand(message,sender);
     }
+    if(message.type==='artistWarning') {
+      if(!fromVK)throw new Error('Запрос должен поступить из VK.');
+      return batchSerial(async()=>{
+        const {batch}=await chrome.storage.local.get('batch');
+        if(message.batchId && (!batch?.enabled || batch.id!==message.batchId || batch.tabId!==sender.tab.id))
+          throw new Error('Устаревший сеанс партии.');
+        const settings=message.batchId ? batch.settings : await AZVK.loadSettings();
+        if(settings.noAudio || message.artist!==settings.artist)throw new Error('Исполнитель не соответствует настройкам.');
+        const warning=`Исполнитель «${settings.artist}» не найден. Проверьте точное имя. Использую случайный трек группы «Три слога».`;
+        if(message.batchId && batch.artistWarning===warning)return {};
+        if(message.batchId)await chrome.storage.local.set({batch:{...batch,artistWarning:warning}});
+        try {await chrome.notifications.create('az-vk-artist-warning',{type:'basic',iconUrl:'icon.png',
+          title:'AZ_vk_poster — проверьте имя исполнителя',message:warning,priority:1});}catch{}
+        return {};
+      });
+    }
     if (message.type.startsWith('batch')) {
       if(['batchProgress','batchError','batchCaptcha','batchHeartbeat'].includes(message.type) && !fromVK) throw new Error('Команда должна поступить из VK.');
       if(['batchStart','batchStatus','batchApprove'].includes(message.type) && sender.tab) throw new Error('Используйте настройки расширения.');

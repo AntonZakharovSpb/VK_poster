@@ -19,7 +19,7 @@ class OptionalContentTests(unittest.TestCase):
 
     def test_disabled_fields_are_optional_but_enabled_fields_still_required(self):
         value={'communityUrl':'https://vk.ru/club123','artist':'','documentUrl':'','noAudio':True,'noText':True}
-        self.assertEqual(self.page.evaluate('value=>AZVK.normalizeSettings(value)',value),{**value,'textMode':'document','quoteReference':'','customText':''})
+        self.assertEqual(self.page.evaluate('value=>AZVK.normalizeSettings(value)',value),{**value,'textMode':'document','quoteReference':'','customText':'','documentInOrder':False})
         for flag in ['noAudio','noText']:
             with self.subTest(flag=flag):
                 error=self.page.evaluate('value=>{try{AZVK.normalizeSettings(value);return null}catch(e){return e.message}}',{**value,flag:False})
@@ -102,8 +102,9 @@ class OptionalContentTests(unittest.TestCase):
         self.page.evaluate('TriSloga.attachAudio()')
         self.assertEqual(self.page.evaluate('TriSloga.state.audio.title'),'Allowed')
 
-    def test_excluded_track_is_skipped_when_taking_first_search_result(self):
-        self.music_search_fixture(None,[],[['Три слога','Не кота бот'],['Other','First allowed'],['Other','Second']])
+    def test_excluded_track_is_skipped_in_tri_sloga_fallback(self):
+        self.music_search_fixture(None,[],[['Other','Foreign']],artist='Неверное имя',
+          fallback_results=[['Три слога','First allowed'],['Три слога','Не кота бот']])
         self.page.evaluate('TriSloga.attachAudio()')
         self.assertEqual(self.page.evaluate('TriSloga.state.audio.title'),'First allowed')
         self.assertEqual(self.page.evaluate('TriSloga.audioAttachments(editor).length'),1)

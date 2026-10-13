@@ -4,13 +4,14 @@
 <header><span class="mark">AZ</span><div><h1>AZ_vk_poster <small id="version"></small></h1><p>Партия отложенных публикаций VK</p></div></header>
 <label for="communityUrl">Ссылка на сообщество VK</label>
 <input id="communityUrl" type="url" placeholder="https://vk.ru/club123" autocomplete="off">
-<div class="setting-heading"><label for="artist">Исполнитель для прикрепленных треков</label><label class="check"><input id="noAudio" type="checkbox">Без аудио</label></div>
+<div class="setting-heading"><label for="artist">Исполнитель ТОЧНО для прикрепленных треков</label><label class="check"><input id="noAudio" type="checkbox">Без аудио</label></div>
 <p class="hint artist-default">по умолчанию группа Три слога</p>
 <input id="artist" type="text" value="Три слога" maxlength="200" autocomplete="off">
 <div class="setting-heading"><label for="textMode">Текст публикаций</label><label class="check"><input id="noText" type="checkbox">Без текста</label></div>
 <select id="textMode"><option value="document">Документ по ссылке</option><option value="quote">Случайная цитата из интернета</option><option value="manual">Один текст для всех постов</option></select>
 <div id="documentFields"><label for="documentUrl">Ссылка на Google Документ с текстами</label>
 <input id="documentUrl" type="url" placeholder="https://docs.google.com/document/d/…/edit" autocomplete="off">
+<label class="check"><input id="documentInOrder" type="checkbox">по-порядку</label>
 <p class="hint">Доступ к документу — по ссылке. Песни — заголовки, куплеты разделены пустыми строками.</p>
 </div>
 <div id="quoteFields" hidden><label for="quoteReference">Слово или фраза для цитаты</label><input id="quoteReference" maxlength="200" placeholder="Например: любовь или дружба"><p class="hint">Викицитатник: случайная цитата по теме и ссылка на источник. Автор — если указан.</p></div>
