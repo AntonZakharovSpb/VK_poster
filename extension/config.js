@@ -9,6 +9,7 @@
     textMode: "document",
     quoteReference: "",
     customText: "",
+    extraSignature: '',
     documentInOrder: false,
     postsPerDay: 1,
     startTime: '09:00',
@@ -57,8 +58,9 @@
     if (!/^[a-z0-9_.]+$/iu.test(slug) || /^(?:id\d+|feed|im|audio|video|photos|friends|settings|login)$/iu.test(slug))
       throw new Error('Укажите страницу сообщества, например https://vk.ru/club123, а не профиль или запись.');
     const noAudio = value.noAudio === true, noText = value.noText === true;
-    const artist = String(value.artist || '').replace(/\s+/gu,' ').trim();
-    if (!noAudio && (!artist || artist.length > 200)) throw new Error('Укажите имя исполнителя (до 200 символов).');
+    const artistInput = String(value.artist || '').replace(/\s+/gu,' ').trim();
+    const artist = artistInput || (noAudio ? '' : defaults.artist);
+    if (!noAudio && artist.length > 200) throw new Error('Укажите имя исполнителя (до 200 символов).');
     let documentUrl = String(value.documentUrl || '').trim();
     const textMode = value.textMode || 'document';
     const quoteReference = String(value.quoteReference || '').trim();
@@ -76,7 +78,7 @@
         throw new Error('Нужна ссылка вида https://docs.google.com/document/d/ID/edit.');
       documentUrl = `https://docs.google.com/document/d/${id}/edit`;
     }
-    return {communityUrl:`${community.origin}/${slug}`,artist,documentUrl,noAudio,noText,textMode,quoteReference,customText,documentInOrder:value.documentInOrder===true,...normalizePostingSchedule(value)};
+    return {communityUrl:`${community.origin}/${slug}`,artist,documentUrl,noAudio,noText,textMode,quoteReference,customText,extraSignature:String(value.extraSignature || '').trim(),documentInOrder:value.documentInOrder===true,...normalizePostingSchedule(value)};
   }
   const documentExport = settings => normalizeSettings(settings).documentUrl.replace(/\/edit$/u,'/export?format=html');
   async function loadSettings() {
@@ -126,5 +128,5 @@
     if (numeric && numeric !== id) throw new Error('ID открытого сообщества не совпадает со ссылкой в настройках.');
     return {owner:`-${id}`,path,name,origin:location.origin};
   }
-  globalThis.AZVK = {version:"0.9.1",defaults,normalizePostingSchedule,postingPlan,postingSlot,normalizeSettings,documentExport,loadSettings,matchesCommunity,resolveCommunity};
+  globalThis.AZVK = {version:"0.9.2",defaults,normalizePostingSchedule,postingPlan,postingSlot,normalizeSettings,documentExport,loadSettings,matchesCommunity,resolveCommunity};
 })();

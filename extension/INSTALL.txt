@@ -1,6 +1,10 @@
-AZ_vk_poster — Chrome extension 0.9.1
+AZ_vk_poster — Chrome extension 0.9.2
 
 Full new-user guide: ../USER_GUIDE.txt (Russian).
+Community/document links save immediately on input/paste and survive popup closure.
+An empty artist field uses «Три слога» when audio is enabled.
+Optional «дополнительная подпись» appends after the text/footer with a blank line.
+«Без текста» skips the additional signature too.
 Text modes: Google Docs link, internet quote by topic with source (author optional),
 or one custom text for all posts. Choose the mode in «Текст публикаций».
 Document footer: community name + heading, if present.

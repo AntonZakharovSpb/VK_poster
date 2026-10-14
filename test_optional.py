@@ -19,8 +19,9 @@ class OptionalContentTests(unittest.TestCase):
 
     def test_disabled_fields_are_optional_but_enabled_fields_still_required(self):
         value={'communityUrl':'https://vk.ru/club123','artist':'','documentUrl':'','noAudio':True,'noText':True}
-        self.assertEqual(self.page.evaluate('value=>AZVK.normalizeSettings(value)',value),{**value,'textMode':'document','quoteReference':'','customText':'','documentInOrder':False,'postsPerDay':1,'startTime':'09:00','innerIntervalHours':1})
-        for flag in ['noAudio','noText']:
+        self.assertEqual(self.page.evaluate('value=>AZVK.normalizeSettings(value)',value),{**value,'textMode':'document','quoteReference':'','customText':'','extraSignature':'','documentInOrder':False,'postsPerDay':1,'startTime':'09:00','innerIntervalHours':1})
+        self.assertEqual(self.page.evaluate('value=>AZVK.normalizeSettings({...value,noAudio:false}).artist',value),'Три слога')
+        for flag in ['noText']:
             with self.subTest(flag=flag):
                 error=self.page.evaluate('value=>{try{AZVK.normalizeSettings(value);return null}catch(e){return e.message}}',{**value,flag:False})
                 self.assertTrue(error)

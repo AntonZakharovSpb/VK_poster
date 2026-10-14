@@ -1,8 +1,10 @@
 # AZ_vk_poster
 
-Chrome extension for VK communities. Version 0.9.1 creates a finite batch of scheduled posts with your chosen community, artist and text source: Google Docs, a random internet quote about a supplied word or phrase, or one custom text for all posts.
+Chrome extension for VK communities. Version 0.9.2 creates a finite batch of scheduled posts with your chosen community, artist and text source: Google Docs, a random internet quote about a supplied word or phrase, or one custom text for all posts.
 
 Full download, installation, use and update instructions for new users: [USER_GUIDE.txt](USER_GUIDE.txt). The repository is private; a new user needs GitHub access from its owner.
+
+Community and document links are saved immediately as you type or paste, so closing the popup to copy another link does not discard them. Other settings still use Save or Start. With audio enabled, an empty artist field uses **Три слога**. The optional **дополнительная подпись** is appended after the existing text/footer with a blank line; **Без текста** also skips this signature.
 
 Documents without headings choose one whole numbered or dash-prefixed list item first, otherwise one section separated by blank lines, otherwise one paragraph. The footer is the community name. Documents with headings keep their existing song/verse selection.
 

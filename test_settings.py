@@ -5,7 +5,7 @@ import test_extension
 import test_batch
 
 EXT=Path(__file__).parent/'extension'
-CUSTOM={'communityUrl':'https://vk.ru/another_group','artist':'Другой артист','documentUrl':'https://docs.google.com/document/d/custom_doc/edit','noAudio':False,'noText':False,'textMode':'document','quoteReference':'','customText':'','documentInOrder':False,'postsPerDay':1,'startTime':'18:30','innerIntervalHours':1}
+CUSTOM={'communityUrl':'https://vk.ru/another_group','artist':'Другой артист','documentUrl':'https://docs.google.com/document/d/custom_doc/edit','noAudio':False,'noText':False,'textMode':'document','quoteReference':'','customText':'','extraSignature':'','documentInOrder':False,'postsPerDay':1,'startTime':'18:30','innerIntervalHours':1}
 COMMUNITY={'owner':'-123456','path':'/another_group','name':'Другое сообщество','origin':'https://vk.ru'}
 
 class SettingsPageTests(unittest.TestCase):
@@ -40,7 +40,7 @@ class SettingsPageTests(unittest.TestCase):
     def test_invalid_targets_are_rejected_before_start(self):
         for key,value in [('communityUrl','https://example.com/club123'),('communityUrl','https://vk.ru/id123'),
                           ('communityUrl','https://vk.ru/wall-123_1'),('communityUrl','https://vk.ru/'),
-                          ('artist',' '),('documentUrl','https://example.com/document/d/id/edit'),
+                          ('artist','x'*201),('documentUrl','https://example.com/document/d/id/edit'),
                           ('documentUrl','https://docs.google.com/spreadsheets/d/id/edit')]:
             with self.subTest(key=key,value=value):
                 error=self.page.evaluate('value=>{try{AZVK.normalizeSettings(value);return null}catch(e){return e.message}}',{**CUSTOM,key:value})

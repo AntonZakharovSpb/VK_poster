@@ -8,18 +8,21 @@ const saveSettings=document.getElementById('saveSettings');
 const noAudio=document.getElementById('noAudio'),noText=document.getElementById('noText');
 const documentInOrder=document.getElementById('documentInOrder');
 const postsPerDay=document.getElementById('postsPerDay'),startTime=document.getElementById('startTime'),innerIntervalHours=document.getElementById('innerIntervalHours');
+const extraSignature=document.getElementById('extraSignature');
+const editedLinks=new Map();
 let settingsLoaded=false;
 let batchEnabled=false;
 enable.disabled=true;saveSettings.disabled=true;
 const textMode=document.getElementById('textMode'),quoteReference=document.getElementById('quoteReference'),customText=document.getElementById('customText');
 document.getElementById('version').textContent='v'+AZVK.version;
-const settingsFields=[communityUrl,artist,documentUrl,textMode,quoteReference,customText,postsPerDay,startTime,innerIntervalHours];
+const settingsFields=[communityUrl,artist,documentUrl,textMode,quoteReference,customText,extraSignature,postsPerDay,startTime,innerIntervalHours];
 function inputSettings(){return AZVK.normalizeSettings({...Object.fromEntries(settingsFields.map(field=>[field.id,field.value])),noAudio:noAudio.checked,noText:noText.checked,documentInOrder:documentInOrder.checked});}
 function updateSettingsFields(){
   communityUrl.disabled=batchEnabled;
   artist.disabled=batchEnabled||noAudio.checked;
   documentUrl.disabled=batchEnabled||noText.checked;
   documentInOrder.disabled=batchEnabled||noText.checked;
+  extraSignature.disabled=batchEnabled||noText.checked;
   textMode.disabled=quoteReference.disabled=customText.disabled=batchEnabled||noText.checked;
   for(const [mode,id] of [['document','documentFields'],['quote','quoteFields'],['manual','manualFields']])document.getElementById(id).hidden=textMode.value!==mode;
   noAudio.disabled=noText.disabled=batchEnabled;
@@ -52,9 +55,14 @@ async function command(data) {
   const reply=await chrome.runtime.sendMessage(data);
   if(!reply?.ok) throw new Error(reply?.error||'Расширение не ответило.');return reply;
 }
+for(const field of [communityUrl,documentUrl])field.addEventListener('input',()=>{
+  if(field.disabled || batchEnabled)return;
+  editedLinks.set(field.id,field.value);
+  command({type:'settingsPatch',settings:{[field.id]:field.value}}).catch(error=>{status.textContent=error.message;});
+});
 function render({batch,publicationAttempt,settings}) {
   batchEnabled=!!batch?.enabled;
-  if(!settingsLoaded || batch?.enabled){showSettings(batch?.enabled && batch.settings ? batch.settings : {...AZVK.defaults,...settings});settingsLoaded=true;}
+  if(!settingsLoaded || batch?.enabled){showSettings(batch?.enabled && batch.settings ? batch.settings : {...AZVK.defaults,...settings,...Object.fromEntries(editedLinks)});settingsLoaded=true;}
   updateSettingsFields();
   saveSettings.disabled=!!batch?.enabled;
   uncertain=publicationAttempt?.status==='pending';
@@ -84,7 +92,7 @@ enable.onclick=async()=>{
 };
 saveSettings.onclick=async()=>{
   saveSettings.disabled=true;
-  try{const reply=await command({type:'settingsSave',settings:inputSettings()});showSettings(reply.settings);status.textContent='Настройки сохранены.';}
+  try{const reply=await command({type:'settingsSave',settings:inputSettings()});editedLinks.clear();showSettings(reply.settings);status.textContent='Настройки сохранены.';}
   catch(error){status.textContent=error.message;}
   finally{saveSettings.disabled=!settingsLoaded || batchEnabled;}
 };

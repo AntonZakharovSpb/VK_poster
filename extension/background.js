@@ -84,13 +84,20 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
   const fromVK = sender.tab && /^https:\/\/(vk\.ru|vk\.com)\//.test(sender.url || sender.tab.url || '');
   if (!fromExtension) return;
   const task = async () => {
-    if (['settingsGet','settingsSave'].includes(message.type)) {
+    if (['settingsGet','settingsSave','settingsPatch'].includes(message.type)) {
       if (sender.tab) throw new Error('Используйте настройки расширения.');
       if (message.type === 'settingsGet') return {settings:await AZVK.loadSettings()};
       return batchSerial(async () => {
         const {batch} = await chrome.storage.local.get('batch');
         if (batch?.enabled) throw new Error('Остановите партию перед изменением настроек.');
-        const settings = AZVK.normalizeSettings(message.settings);
+        let settings;
+        if (message.type === 'settingsPatch') {
+          const entries = Object.entries(message.settings || {});
+          if (!entries.length || entries.some(([key,value])=>!['communityUrl','documentUrl'].includes(key) || typeof value !== 'string'))
+            throw new Error('Можно автоматически сохранить только ссылки на сообщество и документ.');
+          const {settings:saved} = await chrome.storage.local.get('settings');
+          settings = {...AZVK.defaults,...saved,...message.settings};
+        } else settings = AZVK.normalizeSettings(message.settings);
         await chrome.storage.local.set({settings}); return {settings};
       });
     }

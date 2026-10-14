@@ -748,9 +748,12 @@
     }
     return quotes;
   }
+  function appendExtraSignature(text) {
+    return settings.extraSignature ? `${text}\n\n${settings.extraSignature}` : text;
+  }
   async function preparePostText() {
     state.songTitle = null;
-    if (settings.textMode === 'manual') return `${settings.customText}\n\n${NAME}`;
+    if (settings.textMode === 'manual') return appendExtraSignature(`${settings.customText}\n\n${NAME}`);
     if (settings.textMode === 'quote') {
       let quotes = [];
       for (const search of [false,true]) {
@@ -761,12 +764,12 @@
       if (!quotes.length) throw new Error('Не найдена цитата по этой теме. Попробуйте другое слово или фразу.');
       const quote = quotes[Math.floor(Math.random()*quotes.length)];
       log(`Цитата${quote.author ? ': '+quote.author : ''}; источник: ${quote.source}`);
-      return `${quote.text}${quote.author ? '\n\n— '+quote.author : ''}\n\nИсточник: ${quote.source}`;
+      return appendExtraSignature(`${quote.text}${quote.author ? '\n\n— '+quote.author : ''}\n\nИсточник: ${quote.source}`);
     }
     const result = await message({type: 'lyrics',batchId:state.batch?.id});
     const prepared = chooseSongExcerpt(result.html);
     state.songTitle = prepared.title;
-    return prepared.text;
+    return appendExtraSignature(prepared.text);
   }
   function diagnostics(error = '') {
     const scope = currentComposerRoot() || document;
